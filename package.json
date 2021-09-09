@@ -1,0 +1,40 @@
+{
+  "name": "chaltteok",
+  "version": "0.0.1",
+  "description": "국어사전 느낌의 한국어 기반 프로그래밍 언어",
+  "scripts": {
+    "build": "microbundle",
+    "dev": "microbundle watch",
+    "test": "tsc; mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dragonteros/chaltteok.git"
+  },
+  "author": "dragonteros",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dragonteros/chaltteok/issues"
+  },
+  "homepage": "https://github.com/dragonteros/chaltteok#readme",
+  "dependencies": {
+    "eomi-js": "^0.2.1",
+    "josa": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^16.7.1",
+    "microbundle": "^0.13.3",
+    "mocha": "^9.1.0",
+    "typescript": "^4.3.5"
+  },
+  "source": "./src/index.ts",
+  "exports": "./dist/chaltteok.modern.js",
+  "main": "./dist/chaltteok.js",
+  "module": "./dist/chaltteok.module.js",
+  "unpkg": "./dist/chaltteok.umd.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/*"
+  ],
+  "sideEffects": false
+}
