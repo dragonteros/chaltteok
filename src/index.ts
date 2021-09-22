@@ -1,3 +1,4 @@
 export { tokenize } from "./tokenizer";
-export { constructForest } from "./organizer";
+export { constructForest } from "./parser";
 export { treeToAST, run } from "./interpreter";
+
