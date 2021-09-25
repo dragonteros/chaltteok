@@ -19,6 +19,7 @@ function _makeSet(items: Tag[][]) {
 
 function tagPOS(chunk: string): Tag[] {
   let results: Tag[][] = [];
+  if (chunk === ',') results.push([{ lemma: '', pos: chunk }]);
   if (NOUNS.includes(chunk)) results.push([{ lemma: chunk, pos: "체언" }]);
   if (DETERMINERS.includes(chunk))
     results.push([{ lemma: chunk, pos: "관형사" }]);

@@ -1,6 +1,6 @@
 type Tag = { lemma: string; pos: string };
 
-class Tree {
+export class Tree {
   head: Tag;
   children: Tree[];
   pos: string;

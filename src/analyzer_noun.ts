@@ -126,6 +126,14 @@ class NounAnalyzer {
         if (_josa(noun) == target) results.push([noun, key]);
       }
     }
+
+    let numTest = target.match(/^\d+/);
+    if (numTest != null) {
+      for (const [key, _josa] of josas) {
+        let noun = numTest[0];
+        if (_josa(noun) == target) results.push([noun, key]);
+      }
+    }
     return results;
   }
 }
