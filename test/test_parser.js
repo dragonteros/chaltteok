@@ -34,7 +34,7 @@ function assertForest(original, expected) {
 // 조사 없는 명사구: '의'가 생략된 것으로 본다
 // 과p와 고e를 제외하고 모두 남긴다
 
-describe("위계 설정", function () {
+describe("구문 분석", function () {
   it("기본", function () {
     assertForest(
       "4n 를p 2n 로p 나누다v -다e",

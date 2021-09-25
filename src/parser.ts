@@ -1,4 +1,4 @@
-type Tag = { lemma: string; pos: string };
+import { Tag } from "./tokenizer";
 
 export class Tree {
   head: Tag;

@@ -2,7 +2,7 @@ import { NOUNS, DETERMINERS, ADVERBS } from "./keywords";
 import { nounAnalyzer } from "./analyzer_noun";
 import { adjAnalyzer, verbAnalyzer } from "./analyzer_verb";
 
-type Tag = { lemma: string; pos: string };
+export type Tag = { lemma: string; pos: string };
 
 function _makeSet(items: Tag[][]) {
   let result = [];
@@ -19,7 +19,7 @@ function _makeSet(items: Tag[][]) {
 
 function tagPOS(chunk: string): Tag[] {
   let results: Tag[][] = [];
-  if (chunk === ',') results.push([{ lemma: '', pos: chunk }]);
+  if ('.,'.includes(chunk)) results.push([{ lemma: '', pos: chunk }]);
   if (NOUNS.includes(chunk)) results.push([{ lemma: chunk, pos: "체언" }]);
   if (DETERMINERS.includes(chunk))
     results.push([{ lemma: chunk, pos: "관형사" }]);
@@ -61,12 +61,9 @@ function tagPOS(chunk: string): Tag[] {
 }
 
 function tokenize(sentence: string): Tag[] {
-  const chunks = sentence.replace(',', ' , ').trim().split(/\s+/);
-  const tokens = [];
-  for (const chunk of chunks) {
-    tokens.push(...tagPOS(chunk));
-  }
-  return tokens;
+  const chunks = sentence.match(/[^\s,.'"]+|[,.]|'.*?'|".*?"/g);
+  if (!chunks) return [];
+  return chunks.flatMap(tagPOS);
 }
 
 export { tokenize };
