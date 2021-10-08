@@ -1,13 +1,13 @@
-import { Tag } from "./tokenizer";
+import { ParseError, Token, WordToken } from "./analyzer";
 
 export class Tree {
-  head: Tag;
+  head: Token;
   children: Tree[];
-  pos: string;
-  constructor(head: Tag, children?: Tree[], pos?: string) {
+  type: string;
+  constructor(head: Token, children?: Tree[], type?: string) {
     this.head = head;
     this.children = children || [];
-    this.pos = pos || head.pos;
+    this.type = type || (head.type === "symbol" ? head.symbol : head.pos);
   }
 }
 
@@ -38,84 +38,93 @@ class Stack {
   }
 }
 
-const 과 = { lemma: "과", pos: "조사" };
-const 고 = { lemma: "-고", pos: "어미" };
+const 과: WordToken = { type: "word", lemma: "과", pos: "조사" };
+const 고: WordToken = { type: "word", lemma: "-고", pos: "어미" };
 
-function equalWord(word1: Tag, word2: Tag) {
+export function equalWord(word1: Token, word2: WordToken): boolean {
+  if (word1.type !== word2.type) return false;
   return word1.lemma === word2.lemma && word1.pos === word2.pos;
 }
 
 function _stackOperation(top: Tree, vice: Tree) {
-  if (top.pos === "범위" && vice.pos === "범위") {
+  if (top.type === "범위" && vice.type === "범위") {
     return new Tree(과, [vice, top], "체언");
   }
 
-  if (top.pos === "체언") {
-    if (vice.pos === "체언 이어짐") {
+  if (top.type === "체언") {
+    if (vice.type === "체언 이어짐") {
       if (!equalWord(top.head, 과)) {
         return new Tree(vice.head, [...vice.children, top], "체언");
       }
-    } else if (vice.pos === "체언" || vice.pos === "관형사") {
+    } else if (vice.type === "체언" || vice.type === "관형사") {
       return new Tree(top.head, [vice, ...top.children], "체언");
     }
   }
 
-  if (top.pos === "용언") {
-    if (vice.pos === "용언 이어짐") {
+  if (top.type === "용언") {
+    if (vice.type === "용언 이어짐") {
       if (!equalWord(top.head, 고)) {
         return new Tree(vice.head, [...vice.children, top], "용언");
       }
-    } else if (vice.pos === "부사") {
+    } else if (vice.type === "부사") {
       return new Tree(top.head, [vice, ...top.children], "용언");
     }
   }
 
-  if (top.pos === "조사" && vice.pos === "체언") {
+  if (top.type === "접미사" && vice.type === "체언") {
+    return new Tree(top.head, [vice, ...top.children], "체언");
+  }
+
+  if (top.type === "조사" && vice.type === "체언") {
     let output = new Tree(top.head);
     if (equalWord(vice.head, 과)) {
       output.children = vice.children;
     } else {
       output.children = [vice];
     }
-    if (["부터", "까지"].includes(top.head.lemma)) {
-      output.pos = "범위";
-    } else if (top.head.lemma === "의") {
-      output.pos = "관형사";
-    } else if (top.head.lemma === "이") {
-      output.pos = "용언";
-    } else if (top.head.lemma === "과") {
-      output.pos = "체언 이어짐";
-    } else if (top.head.lemma === "만") {
-      output.pos = "체언";
+    const head = top.head as WordToken; // 조사
+    if (["부터", "까지"].includes(head.lemma)) {
+      output.type = "범위";
+    } else if (head.lemma === "의") {
+      output.type = "관형사";
+    } else if (head.lemma === "이다") {
+      output.type = "용언";
+    } else if (head.lemma === "과") {
+      output.type = "체언 이어짐";
+    } else if (head.lemma === "만") {
+      output.type = "체언";
     } else {
-      output.pos = "부사";
+      output.type = "부사";
     }
     return output;
   }
 
-  if (top.pos === "어미" && vice.pos === "용언") {
+  if (top.type === "어미" && vice.type === "용언") {
     let output = new Tree(top.head);
     if (equalWord(vice.head, 고)) {
       output.children = vice.children;
     } else {
       output.children = [vice];
     }
-    if (["-(으)ㅁ", "-기"].includes(top.head.lemma)) {
-      output.pos = "체언";
-    } else if (["-(으)ㄴ", "-(으)ㄹ", "-는"].includes(top.head.lemma)) {
-      output.pos = "관형사";
-    } else if (["-다", "-ㄴ다/는다"].includes(top.head.lemma)) {
-      output.pos = "서술어";
-    } else if (top.head.lemma === "-고") {
-      output.pos = "용언 이어짐";
+    const head = top.head as WordToken; // 어미
+    if (["-(으)ㅁ", "-기"].includes(head.lemma)) {
+      output.type = "체언";
+    } else if (["-(으)ㄴ", "-(으)ㄹ", "-는"].includes(head.lemma)) {
+      output.type = "관형사";
+    } else if (["-다", "-ㄴ다/는다"].includes(head.lemma)) {
+      output.type = "서술어";
+    } else if (head.lemma === "-고") {
+      output.type = "용언 이어짐";
     } else {
-      output.pos = "부사";
+      output.type = "부사";
     }
     return output;
   }
 }
 
-function constructForest(tokens: Tag[]) {
+
+function constructForest(tokens: Token[]) {
+  let forest: Tree[] = [];
   let stack = new Stack();
   for (const token of tokens) {
     stack.push(new Tree(token));
@@ -123,8 +132,13 @@ function constructForest(tokens: Tag[]) {
       let top = stack.get(-1);
       let vice = stack.get(-2);
 
-      if (top.pos === ",") break;
-      if (vice.pos === "," && stack.length >= 3) {
+      if (top.type === ".") {
+        stack.splice(-2, 2);
+        forest.push(vice);
+        break;
+      }
+      if (top.type === ",") break;
+      if (vice.type === "," && stack.length >= 3) {
         vice = stack.get(-3);
         if (_stackOperation(top, vice)) stack.splice(-2, 1);
         break;
@@ -135,7 +149,8 @@ function constructForest(tokens: Tag[]) {
       stack.splice(-2, 2, output);
     }
   }
-  return stack.data;
+  if (stack.length > 0) throw new ParseError("구문은 마침표로 끝나야 합니다.");
+  return forest;
 }
 
 export { constructForest };

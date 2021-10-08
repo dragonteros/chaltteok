@@ -1,4 +1,4 @@
+export { Analyzer, Token } from "./analyzer";
 export { tokenize } from "./tokenizer";
-export { constructForest } from "./parser";
-export { treeToAST, run } from "./interpreter";
-
+export { constructForest, Tree } from "./parser";
+export { ASTNode, concreteToAST, run } from "./interpreter";
