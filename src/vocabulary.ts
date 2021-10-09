@@ -6,6 +6,7 @@ export const NOUNS = `
 값
 개
 거듭제곱
+거짓
 것
 곱
 곱절
@@ -27,6 +28,7 @@ export const NOUNS = `
 정수
 제곱
 차
+참
 함수
 합
 `
@@ -143,6 +145,7 @@ export const EOMIS: Eomi[] = [
   new Eomi("아"),
   new Eomi("아서"),
   new Eomi("으면"),
+  new Eomi("자"),
   new Eomi("지"),
 ];
 export const VERB_EOMIS: Eomi[] = [

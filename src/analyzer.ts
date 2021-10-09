@@ -1,3 +1,5 @@
+import { josa } from "josa";
+
 import { Yongeon, Analyzer as YongeonAnalyzer } from "eomi-js";
 import { extractAndProcessNumber, Analysis } from "kor-to-number";
 
@@ -12,7 +14,11 @@ import {
 } from "./vocabulary";
 import { Trie } from "./trie";
 
-export class ParseError extends Error {}
+export class ParseError extends Error {
+  constructor(message: string) {
+    super(josa(message));
+  }
+}
 
 export type POS =
   | "체언"
@@ -23,6 +29,7 @@ export type POS =
   | "어미"
   | "접미사";
 
+export type IDToken = { type: "id"; lemma: string; pos: "체언" };
 export type WordToken = { type: "word"; lemma: string; pos: POS };
 export type SymbolToken = { type: "symbol"; symbol: string };
 export type ArityToken = {
@@ -38,7 +45,12 @@ export type NumberToken = {
   pos: "체언";
 };
 
-export type Token = WordToken | SymbolToken | ArityToken | NumberToken;
+export type Token =
+  | IDToken
+  | WordToken
+  | SymbolToken
+  | ArityToken
+  | NumberToken;
 
 /**
  * 호환용 한글 자모 중 자음을 한글 자모 중 종성으로 변환합니다.
@@ -72,7 +84,7 @@ class NounAnalyzer {
   addNoun(noun: string): void {
     this.nouns.set(N(noun), noun);
   }
-  analyze(target: string): WordToken[][] {
+  analyze(target: string): (WordToken | IDToken)[][] {
     let candidates: [string, string][];
     const quoteMatch = target.match(/^'([^']+)'([^']*)$/);
     if (quoteMatch) {
@@ -80,10 +92,16 @@ class NounAnalyzer {
     } else {
       candidates = this.nouns.allPrefixes(N(target));
     }
-    let results: WordToken[][] = [];
+    let results: (WordToken | IDToken)[][] = [];
     for (const [noun, rest] of candidates) {
-      const analyzed = analyzeNounChunk(noun, rest);
-      if (analyzed) results.push(analyzed);
+      let analyzed = analyzeNounChunk(noun, rest);
+      if (!analyzed) continue;
+      if (!quoteMatch) results.push(analyzed);
+      else {
+        let newAnalysis: (WordToken | IDToken)[] = analyzed;
+        newAnalysis[0].type = "id";
+        results.push(newAnalysis);
+      }
     }
     return results;
   }
@@ -192,7 +210,7 @@ export function extractNumericLiteral(
   function mapper(analysis: Analysis): [Token[], string] | null {
     if (isNaN(analysis.parsed)) return null;
     if (/[.]\s*$/.test(analysis.consumed)) return null;
-    if (/^([.,]|$)/.test(analysis.rest) || /\s$/.test(analysis.consumed)) {
+    if (/^([.,\s]|$)/.test(analysis.rest) || /\s$/.test(analysis.consumed)) {
       return [[format(analysis)], analysis.rest];
     }
     const match = analysis.rest.match(/^([^\s.,"]+)\s*(.*)$/);
@@ -203,11 +221,11 @@ export function extractNumericLiteral(
     let tokens = [format(analysis), ...analyzed.slice(1)];
     return [tokens, rest];
   }
-  return extractAndProcessNumber(
-    sentence,
-    ["숫자", "숫자혼용", "한자어"],
-    mapper
-  );
+  return extractAndProcessNumber(sentence, mapper, [
+    "숫자",
+    "숫자혼용",
+    "한자어",
+  ]);
 }
 
 export function extractArityDesignator(word: string): Token[] | null {
@@ -240,5 +258,5 @@ export function extractArityDesignator(word: string): Token[] | null {
     if (!type) return null;
     return [format(analysis, type), ...tokens];
   }
-  return extractAndProcessNumber(word.trim(), ["순우리말"], mapper);
+  return extractAndProcessNumber(word.trim(), mapper, ["순우리말"]);
 }

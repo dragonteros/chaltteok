@@ -2,18 +2,20 @@ import { Yongeon } from "eomi-js";
 
 import { Analyzer, ParseError } from "./analyzer";
 import { tokenize } from "./tokenizer";
-import { constructForest, Tree, 나눔, ValuePack, Env } from "./parser";
+import { constructForest, Tree, Value, ValuePack, Env } from "./parser";
 
 function interpret(env: Env, ast: Tree): [Env, ValuePack] {
   if (!ast.processor)
-    throw new ParseError('Internal Error interpret::NO_PROCESSOR');
+    throw new ParseError("Internal Error interpret::NO_PROCESSOR");
   let newEnv = env;
-  let args = [];
+  let args: ValuePack[] = [];
   for (const child of ast.children) {
     let output;
     [newEnv, output] = interpret(newEnv, child);
     args.push(output);
   }
+  if (ast.omitIndex != null)
+    args.splice(ast.omitIndex, 0, newEnv.getRegister());
   return ast.processor(newEnv, ...args);
 }
 
@@ -66,19 +68,18 @@ function parseDefinition(definition: string): Definition[] {
   return results;
 }
 
-function toJSValue(value: ValuePack): number | boolean {
-  if (value.values.length !== 1) throw new ParseError('Too many output')
-  const _value = value.values[0]
-  if (_value instanceof 나눔) return _value.값
-  if (typeof _value === 'number') return _value
-  if (typeof _value === 'boolean') return _value
-  throw new ParseError('범위, 이름, 열 반환')
+function toJSValue(env:Env, value: Value): number | boolean {
+  if (typeof value === "number") return value;
+  if (typeof value === "boolean") return value;
+  if (value.type === "나눔") return value.값;
+  if (value.type === "이름") return toJSValue(env, env.get(value.id));
+  throw new ParseError("범위 혹은 열 반환");
 }
 
 export function run(program: string): number | boolean {
   const blocks = program.split(/\n\n+/g);
 
-  let env: Env = null;
+  let env: Env = new Env({});
   let analyzer = new Analyzer();
   let commands: string[] = [];
 
@@ -109,6 +110,7 @@ export function run(program: string): number | boolean {
       [env, value] = interpret(env, tree); // TODO: update env
     }
   }
-  if (value == null) throw new ParseError('Internal Error run::NO_COMMANDS');
-  return toJSValue(value)
+  if (value == null) throw new ParseError("Internal Error run::NO_COMMANDS");
+  if (value.values.length !== 1) throw new ParseError("Too many output");
+  return toJSValue(env, value.values[0]);
 }

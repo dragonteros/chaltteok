@@ -46,7 +46,7 @@ describe("수사 인식", function () {
     assertInterpret("플러스만5000.", 15000);
   });
 });
-// TODO: need more thorough test!!
+
 describe("산술", function () {
   it("기본", function () {
     assertInterpret("3의 제곱.", 9);
@@ -95,7 +95,7 @@ describe("산술", function () {
     assertInterpret("십에서 마이너스 오를 뺀 값.", 15);
     assertInterpret("1과 2를 더해 10에서 뺀 값.", 7);
     assertInterpret("1과 2를 더해 10을 뺀 값.", -7);
-    assertInterpret("1과 2를 더해 10 뺀 값.", -7);  // 기본 순서 따르기
+    // assertInterpret("1과 2를 더해 10 뺀 값.", -7);  // TODO: 기본 순서 따르기
   });
   it("곱셈", function () {
     assertInterpret("0과 1의 곱.", 0);
@@ -118,35 +118,37 @@ describe("산술", function () {
     assertInterpret("-7을 -2로 나눈 몫.", 3);
     assertInterpret("-7을 -2로 나눈 나머지.", -1);
   });
-  // it("결합", function () {
-  //   assertInterpret("1과 2의 합과 3의 합.", 6);
-  //   assertInterpret("1과 2의 합과, 3과 4의 합의 합.", 10);
-  //   assertInterpret("1과 2를 더해 3과 더한 값.", 6);
-  //   assertInterpret("1과 2를 더하고 3과 4를 더해 더한 값.", 10);
-  // });
+  it("결합", function () {
+    assertInterpret("1과 2의 합과 3의 합.", 6);
+    assertInterpret("1과 2의 합과, 3과 4의 합의 합.", 10);
+    assertInterpret("1과 2를 더해 3과 더한 값.", 6);
+    // assertInterpret("1과 2를 더하고 3과 4를 더해 모두 더한 값.", 10);
+  });
+});
+
+describe("조건", function () {
+  it("참거짓", function () {
+    assertInterpret("참.", true);
+    assertInterpret("거짓.", false);
+  });
+  it("기본", function () {
+    assertInterpret("1이 2보다 작다.", true);
+    assertInterpret("1을 '변수'라고 하고 '변수'가 5보다 작으면 10 아니면 0을 -5와 더한다.", 5);
+    assertInterpret("7을 '변수'라고 하고 '변수'가 5보다 작으면 10 아니면 0을 -5와 더한다.", -5);
+  });
 });
 
 describe("프로그램", function () {
-  it("배수", function () {
-    const defs = `
-배수 [명사]
-어떤 수로 나누어떨어지는 수.
-
+  it("변수 선언", function () {
+    let defs = `
+1을 '초깃값'으로 삼는다.
+마이너스 이를 '차분'으로 두자.
 `;
-    assertInterpret(defs + "6이 3으로 나누어떨어진다.", true);
-    assertInterpret(defs + "7이 -2로 나누어떨어진다.", false);
-    assertInterpret(defs + "5가 2의 배수이다.", false);
-    assertInterpret(defs + "9가 -3의 배수이다.", true);
-  });
-  it("짝수", function () {
-    const defs = `
-배수
-[명사] 어떤 수로 나누어떨어지는 수.
-
-짝수 [명사] 2의 배수.
-
-`;
-    assertInterpret(defs + "9가 짝수이다.", false);
-    assertInterpret(defs + "마이너스 십이 짝수이다.", true);
+    assertInterpret(defs + "'초깃값'과 '차분'의 합.", -1);
+    defs += `
+    '초깃값'과 '차분'의 합이 '현재값'이 된다.
+    '현재값'과 '차분'의 합이 '현재값'으로 된다.
+    `
+    assertInterpret(defs + "'현재값'.", -3);
   });
 });

@@ -1,13 +1,44 @@
 import { ParseError, Token, WordToken, POS } from "./analyzer";
 
+class InterpretError extends ParseError {}
+
 export function equalWord(word1: Token, word2: WordToken): boolean {
   if (word1.type !== word2.type) return false;
   return word1.lemma === word2.lemma && word1.pos === word2.pos;
 }
 
-// TODO: Side effects!
+type Scope = { [id: string]: Value };
+export class Env {
+  scope: Scope;
+  register?: ValuePack;
+  constructor(scope: Scope, register?: ValuePack) {
+    this.scope = scope;
+    this.register = register;
+  }
+  clone() {
+    let newScope: Scope = {};
+    for (const key in this.scope) newScope[key] = this.scope[key];
+    return new Env(newScope, this.register);
+  }
+  get(id: string): Value {
+    if (this.scope[id] != null) return this.scope[id];
+    throw new ParseError(id + "#{를} 찾을 수 없습니다.");
+  }
+  set(id: string, value: Value) {
+    this.scope[id] = value;
+  }
+  getRegister(): ValuePack {
+    if (this.register == null)
+      throw new ParseError("Internal Error Env::getRegister::NO_REGISTER");
+    return this.register;
+  }
+  setRegister(value: ValuePack) {
+    this.register = value;
+  }
+}
 
 export class 나눔 {
+  type: "나눔" = "나눔";
   값: number;
   몫: number;
   나머지: number;
@@ -18,15 +49,13 @@ export class 나눔 {
     this.나머지 = remainder;
   }
 }
-type 범위 = { start: number; end: number };
+type 범위 = { type: "범위"; start: number; end: number };
 type 수 = number;
-type 이름 = { id: string };
+type 이름 = { type: "이름"; id: string };
 type 참거짓 = boolean;
-type List = { data: Value[] };
+type List = { type: "List"; data: Value[] };
 export type Value = 수 | 참거짓 | 나눔 | 이름 | 범위 | List;
 export type ValuePack = { values: Value[] };
-
-export type Env = null;
 
 type Processor = (env: Env, ...args: ValuePack[]) => [Env, ValuePack];
 const id: Processor = (env, arg: ValuePack) => [env, arg];
@@ -38,7 +67,11 @@ function op<T extends Value>(
   f: (env: Env, ...args: T[]) => [Env, Value]
 ): Processor {
   return function (env, ...args) {
-    const unwrapped = args.map((x) => x.values[0]);
+    const unwrapped = args
+      .map((x) => x.values[0])
+      .map((x) =>
+        typeof x === "object" && x.type === "이름" ? env.get(x.id) : x
+      );
     const newArgs = unwrapped as T[];
     const [newEnv, value] = f(env, ...newArgs);
     return [newEnv, { values: [value] }];
@@ -53,6 +86,14 @@ function spread(f: Processor): Processor {
 
 const add = pure<number>((...nums: number[]) => nums.reduce((x, y) => x + y));
 const mul = pure<number>((...nums: number[]) => nums.reduce((x, y) => x * y));
+function setID(env: Env, value: ValuePack, id: ValuePack): [Env, ValuePack] {
+  let newEnv = env.clone();
+  let _id = id.values[0];
+  if (typeof _id !== "object" || _id.type !== "이름")
+    throw new InterpretError("'이름' 자료형의 객체가 와야 합니다.");
+  newEnv.set(_id.id, value.values[0]);
+  return [newEnv, { values: [] }];
+}
 
 // `[...]` means it admits (at most) one ommission (_)
 type PatternMap = { [x: string]: Processor };
@@ -93,11 +134,13 @@ const BUILTIN_PATTERN: PatternMap = {
     pure<number>((x, y) => new 나눔(x, y))
   ),
   "[{1 수}n 에p] {1 수}n 를p 곱하다v -> {1 수}v": op<number>(mul),
+  "[{1 수}n 를p] {1 수}n 과p 곱하다v -> {1 수}v": op<number>(mul),
   "[{2+ 수}n 를p] 곱하다v -> {1 수}v": spread(op<number>(mul)),
   "[{1 수}n 에p] {1 수}n 를p 더하다v -> {1 수}v": op<number>(add),
+  "[{1 수}n 를p] {1 수}n 과p 더하다v -> {1 수}v": op<number>(add),
   "[{2+ 수}n 를p] 더하다v -> {1 수}v": spread(op<number>(add)),
   "{1 수}n 부터p {1 수}n 까지p -> {1 범위}n": op<number>(
-    pure<number>((start, end): 범위 => ({ start, end }))
+    pure<number>((start, end): 범위 => ({ type: "범위", start, end }))
   ),
   "{1 수}n 분s 의p {1 수}n -> {1 수}n": op<number>(
     pure<number>((x, y) => y / x)
@@ -126,19 +169,25 @@ const BUILTIN_PATTERN: PatternMap = {
     x,
     y
   ) => [env, pred.values[0] ? x : y],
-  "{1 참거짓}v -면e {n T}v 아니다v -면e {n T}v -> {n T}v": (
-    env,
-    pred,
-    x,
-    y
-  ) => [env, pred.values[0] ? x : y],
 
-  "[{1 T}n 를p] {1 이름}n 로p 두다v -> {}v": id, // TODO
-  "[{1 T}n 를p] {1 이름}n 로p 삼다v -> {}v": id,
-  "[{1 T}n 가p] {1 이름}n 가p 되다v -> {}v": id,
-  "[{1 T}n 가p] {1 이름}n 로p 되다v -> {}v": id,
+  "[{1 T}n 를p] {1 이름}n 로p 두다v -> {}v": setID,
+  "[{1 T}n 를p] {1 이름}n 로p 삼다v -> {}v": setID,
+  "[{1 T}n 가p] {1 이름}n 가p 되다v -> {}v": setID,
+  "[{1 T}n 가p] {1 이름}n 로p 되다v -> {}v": setID,
+  "[{1 T}n 를p] {1 이름}n 로p 하다v -> {}v": setID,
+  "[{1 T}n 를p] {1 이름}n 이라고p 하다v -> {}v": setID,
 
+  "[{1 T}n 가p] {1 T}n 과p 같다v -> {1 참거짓}v": spread(
+    op<Value>(
+      pure<Value>((...args) => args.slice(1).every((x) => x === args[0]))
+    )
+  ),
   "[{2+ T}n 가p] 같다v -> {1 참거짓}v": spread(
+    op<Value>(
+      pure<Value>((...args) => args.slice(1).every((x) => x === args[0]))
+    )
+  ),
+  "[{1 T}n 가p] {1 T}n 과p 다르다v -> {1 참거짓}v": spread(
     op<Value>(
       pure<Value>((...args) => args.slice(1).every((x) => x === args[0]))
     )
@@ -173,20 +222,25 @@ const BUILTIN_PATTERN: PatternMap = {
   "{n T}n 의p -> {n T}d": id,
 
   "{n T}v -(아/어)e -> {}": function (env, pack): [Env, ValuePack] {
-    return [env, { values: [] }]; // TODO
+    let newEnv = env.clone();
+    newEnv.setRegister(pack);
+    return [newEnv, { values: [] }];
   },
   "{n T}v -(으)ㄴe -> {n T}d": id,
+  "{n T}v -(으)ㄴ다/-는다e -> {n T}v": id,
   "{n T}v -(으)ㄹe -> {n T}d": id,
   "{n T}v -(으)ㅁe -> {n T}n": id,
   "{n T}v -고e -> {}": function (env, pack): [Env, ValuePack] {
-    return [env, { values: [] }]; // TODO
+    let newEnv = env.clone();
+    newEnv.setRegister(pack);
+    return [newEnv, { values: [] }];
   },
   "{n T}v -기e -> {n T}n": id,
   "{n T}v -는e -> {n T}d": id,
   "{n T}v -다e -> {n T}v": id,
-  "{n T}v -ㄴ다/-는다e -> {n T}v": id,
+  "{n T}v -자e -> {n T}v": id,
 
-  "{} {n T}v -> {n T}v": (env, _, cur) => [env, cur],
+  "{} {n T}v -> {n T}v": (env, _, cur) => [env, cur], // TODO: logical and
 };
 
 type SimpleTerm = { type: "simple"; token: Token; pos: POS };
@@ -203,9 +257,14 @@ type Phrase = { terms: Term[]; omit: boolean };
 function defaultProcessor(term: Term): Processor | undefined {
   if (term.type === "generic")
     throw new ParseError("Internal Error defaultProcessor::GENERIC_TERM");
-  if (term.token.type !== "number") return;
-
-  const value = term.token.number;
+  let value: Value;
+  if (term.token.type === "id") value = { type: "이름", id: term.token.lemma };
+  else if (term.token.type === "number") value = term.token.number;
+  else if (term.token.type === "word") {
+    if (term.token.lemma === "참") value = true;
+    else if (term.token.lemma === "거짓") value = false;
+    else return;
+  } else return;
   return (env: Env) => [env, { values: [value] }];
 }
 
@@ -265,7 +324,7 @@ class Pattern {
       const omit = _phrase[0] === "[";
       if (omit) _phrase = _phrase.slice(1, -1);
 
-      let _terms = _phrase.match(/\{[^{}\s]+ [^{}\s]+\}\w?|[^{}\s]+/g);
+      let _terms = _phrase.match(/\{[^{}\s]+ [^{}\s]+\}\w?|\{\}\w?|[^{}\s]+/g);
       if (!_terms)
         throw new ParseError(
           "Internal Error Pattern::NO_INPUT_TERMS " + pattern
@@ -309,18 +368,12 @@ class Pattern {
 
   realize(arity: number | null): GenericTerm {
     let _arity: number;
-    if (arity != null) {
-      if (typeof this.returnTerm.arity !== "number") {
-        _arity = arity + (this.returnTerm.arity === "n" ? 0 : 1);
-      } else {
-        if (arity !== this.returnTerm.arity)
-          throw new ParseError("Internal Error realize::ARITY_MISMATCH");
-        _arity = arity;
-      }
-    } else {
-      if (typeof this.returnTerm.arity !== "number")
-        throw new ParseError("Internal Error realize::NO_ARITY_REQUIREMENT");
+    if (typeof this.returnTerm.arity === "number") {
       _arity = this.returnTerm.arity;
+    } else {
+      if (arity == null)
+        throw new ParseError("Internal Error realize::NO_ARITY_REQUIREMENT");
+      _arity = arity + (this.returnTerm.arity === "n" ? 0 : 1);
     }
     return {
       type: "generic",
@@ -352,7 +405,6 @@ class Pattern {
     }
     if (tree.head.type === "simple") {
       if (tree.head.token.type === "word") return false;
-      if (tree.head.token.type === "symbol") return false;
       if (tree.head.token.type === "arity") return false;
       if (typeof term.arity === "number") return term.arity === 1;
       if (typeof term.arity === "object") return 1 >= term.arity[1];
