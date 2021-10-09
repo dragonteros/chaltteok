@@ -1,6 +1,6 @@
 {
   "name": "chaltteok",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "자연스러운 한국어를 꿈꾸는 프로그래밍 언어",
   "scripts": {
     "build": "microbundle",

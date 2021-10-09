@@ -48,7 +48,7 @@ function tagPOS(chunk: string, analyzer: Analyzer): Token[] {
 
 function tokenize(sentence: string, analyzer: Analyzer): Token[] {
   let result: Token[] = [];
-  sentence = sentence.trim().replace(/\s+/g, ' ');
+  sentence = sentence.trim().replace(/\s+/g, ' ').replace(/\(.*?\)/g, '');
   while (sentence.length > 0) {
     let _result = extractNumericLiteral(sentence);
     if (_result != null) {

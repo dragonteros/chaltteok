@@ -180,6 +180,12 @@ describe("프로그램", function () {
     `;
     assertInterpret(defs + "'현재값'.", -3);
   });
+  it("주석", function () {
+    let defs = `
+      1(안녕)을 '초깃값'(하세요)으로 삼는다.(반갑
+      습니다.) 마이너스(처음)이를 '차분(뵙겠)'으(습니다)로 두자.`;
+    assertInterpret(defs + "'초깃값'과 '차분'의 합.", -1);
+  });
   it("반복", function () {
     let defs = `
       0을 '지표'로 삼고 2를 '결과'라고 하자.
