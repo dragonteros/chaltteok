@@ -1,7 +1,7 @@
 import assert from "assert";
 import { Analyzer, tokenize } from "../dist/chaltteok.js";
 
-function encodeTag(tag) {
+export function encodeTag(tag) {
   if (tag.type === "symbol") return tag.symbol;
   const posMark = {
     체언: "n",

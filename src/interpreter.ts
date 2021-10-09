@@ -1,287 +1,23 @@
 import { Yongeon } from "eomi-js";
 
-import { Analyzer, ParseError, WordToken } from "./analyzer";
+import { Analyzer, ParseError } from "./analyzer";
 import { tokenize } from "./tokenizer";
-import { constructForest, Tree, equalWord } from "./parser";
+import { constructForest, Tree, 나눔, ValuePack, Env } from "./parser";
 
-type LiteralNode = number;
-type Operator =
-  | "+"
-  | "-"
-  | "*"
-  | "/"
-  | "차"
-  | "제곱"
-  | "거듭제곱"
-  | "나누다"
-  | "나누어떨어지다";
-type OperationNode = { type: "op"; operator: Operator; operands: ASTNode[] };
-type AttrAccessNode = { type: "attr"; object: ASTNode; attr: string };
-export type ASTNode = LiteralNode | OperationNode | AttrAccessNode;
-
-type Division = { valueOf: () => number; 몫: number; 나머지: number };
-type Value = number | boolean | Division;
-
-function interpret(ast: ASTNode, env: Definition[]): Value {
-  if (typeof ast === "number") return ast;
-  if (ast.type === "attr") {
-    const operand = interpret(ast.object, env);
-    if (typeof operand !== "object") throw new ParseError();
-    if (ast.attr !== "몫" && ast.attr !== "나머지") throw new ParseError();
-    return operand[ast.attr];
+function interpret(env: Env, ast: Tree): [Env, ValuePack] {
+  if (!ast.processor)
+    throw new ParseError('Internal Error interpret::NO_PROCESSOR');
+  let newEnv = env;
+  let args = [];
+  for (const child of ast.children) {
+    let output;
+    [newEnv, output] = interpret(newEnv, child);
+    args.push(output);
   }
-
-  const f = (x: ASTNode) => interpret(x, env).valueOf();
-  let operands;
-
-  switch (ast.operator) {
-    case "+":
-      operands = ast.operands.map(f);
-      if (!operands.every((x): x is number => typeof x === "number"))
-        throw new ParseError();
-      return operands.reduce((a, b) => a + b);
-    case "-":
-      operands = ast.operands.map(f);
-      if (!operands.every((x): x is number => typeof x === "number"))
-        throw new ParseError();
-      return operands[0] - operands[1];
-    case "*":
-      operands = ast.operands.map(f);
-      if (!operands.every((x): x is number => typeof x === "number"))
-        throw new ParseError();
-      return operands.reduce((a, b) => a * b);
-    case "/":
-      operands = ast.operands.map(f);
-      if (!operands.every((x): x is number => typeof x === "number"))
-        throw new ParseError();
-      return operands[0] / operands[1];
-    case "차":
-      operands = ast.operands.map(f);
-      if (!operands.every((x): x is number => typeof x === "number"))
-        throw new ParseError();
-      return Math.abs(operands[0] - operands[1]);
-    case "제곱":
-      operands = ast.operands.map(f);
-      if (!operands.every((x): x is number => typeof x === "number"))
-        throw new ParseError();
-      return Math.pow(operands[0], 2);
-    case "거듭제곱":
-      operands = ast.operands.map(f);
-      if (!operands.every((x): x is number => typeof x === "number"))
-        throw new ParseError();
-      return Math.pow(operands[0], operands[1]);
-    case "나누다": {
-      operands = ast.operands.map(f);
-      if (!operands.every((x): x is number => typeof x === "number"))
-        throw new ParseError();
-      const [numerator, denominator] = operands;
-      const remainder = numerator % denominator;
-      const result: Division = {
-        valueOf: () => numerator / denominator,
-        몫: (numerator - remainder) / denominator,
-        나머지: remainder,
-      };
-      return result;
-    }
-    case "나누어떨어지다":
-      operands = ast.operands.map(f);
-      if (!operands.every((x): x is number => typeof x === "number"))
-        throw new ParseError();
-      return operands[0] % operands[1] === 0;
-  }
+  return ast.processor(newEnv, ...args);
 }
 
-const 가: WordToken = { type: "word", lemma: "가", pos: "조사" };
-const 를: WordToken = { type: "word", lemma: "를", pos: "조사" };
-const 로: WordToken = { type: "word", lemma: "로", pos: "조사" };
-const 에서: WordToken = { type: "word", lemma: "에서", pos: "조사" };
-const 의: WordToken = { type: "word", lemma: "의", pos: "조사" };
-
-const v2a: WordToken[] = [
-  { type: "word", lemma: "-(으)ㄴ", pos: "어미" },
-  { type: "word", lemma: "-는", pos: "어미" },
-];
-
-function matchAndUnwrap(children: Tree[], allowlist: WordToken[]): Tree[] {
-  if (children.length !== 1) throw new ParseError();
-  let child = children[0];
-  if (!allowlist.some((x) => equalWord(child.head, x))) throw new ParseError();
-  return child.children;
-}
-
-function processNoun(head: WordToken, children: Tree[]): ASTNode {
-  let operands;
-  switch (head.lemma) {
-    case "제곱":
-      if (head.pos === "체언") {
-        operands = matchAndUnwrap(children, [의]);
-        if (operands.length !== 1) throw new ParseError();
-        return {
-          type: "op",
-          operator: head.lemma,
-          operands: operands.map(concreteToAST),
-        };
-      } else if (head.pos === "접미사") {
-        if (children.length !== 1) throw new ParseError();
-      } else throw new ParseError();
-
-    case "곱":
-      operands = matchAndUnwrap(children, [의]);
-      if (operands.length === 0) throw new ParseError();
-      return {
-        type: "op",
-        operator: "*",
-        operands: operands.map(concreteToAST),
-      };
-
-    case "합":
-      operands = matchAndUnwrap(children, [의]);
-      if (operands.length === 0) throw new ParseError();
-      return {
-        type: "op",
-        operator: "+",
-        operands: operands.map(concreteToAST),
-      };
-
-    case "차":
-      operands = matchAndUnwrap(children, [의]);
-      if (operands.length !== 2) throw new ParseError();
-      return {
-        type: "op",
-        operator: head.lemma,
-        operands: operands.map(concreteToAST),
-      };
-
-    case "몫":
-    case "나머지":
-      operands = matchAndUnwrap(children, [의]);
-      if (operands.length !== 1) throw new ParseError();
-      return {
-        type: "attr",
-        object: concreteToAST(operands[0]),
-        attr: head.lemma,
-      };
-
-    case "것":
-      operands = matchAndUnwrap(children, v2a);
-      if (operands.length !== 1) throw new ParseError();
-      return concreteToAST(operands[0]);
-
-    default:
-      throw new ParseError();
-  }
-}
-
-function processVerb(head: WordToken, children: Tree[]): ASTNode {
-  let operands: Tree[];
-  switch (head.lemma) {
-    case "곱하다":
-      operands = matchAndUnwrap(children, [를]);
-      if (operands.length === 0) throw new ParseError();
-      return {
-        type: "op",
-        operator: "*",
-        operands: operands.map(concreteToAST),
-      };
-    case "더하다":
-      operands = matchAndUnwrap(children, [를]);
-      if (operands.length === 0) throw new ParseError();
-      return {
-        type: "op",
-        operator: "+",
-        operands: operands.map(concreteToAST),
-      };
-    case "빼다": {
-      let first = null;
-      let second = null;
-      for (const child of children) {
-        if (equalWord(child.head, 에서)) {
-          if (first != null) throw new ParseError();
-          if (children.length !== 1) throw new ParseError();
-          first = concreteToAST(child.children[0]);
-        } else if (equalWord(child.head, 를)) {
-          if (second != null) throw new ParseError();
-          if (children.length !== 1) throw new ParseError();
-          second = concreteToAST(child.children[0]);
-        } else throw new ParseError();
-      }
-      if (first == null || second == null) throw new ParseError();
-      return {
-        type: "op",
-        operator: "-",
-        operands: [first, second],
-      };
-    }
-    case "나누다": {
-      let first = null;
-      let second = null;
-      for (const child of children) {
-        if (equalWord(child.head, 를)) {
-          if (first != null) throw new ParseError();
-          if (children.length !== 1) throw new ParseError();
-          first = concreteToAST(child.children[0]);
-        } else if (equalWord(child.head, 로)) {
-          if (second != null) throw new ParseError();
-          if (children.length !== 1) throw new ParseError();
-          second = concreteToAST(child.children[0]);
-        } else throw new ParseError();
-      }
-      if (first == null || second == null) throw new ParseError();
-      return {
-        type: "op",
-        operator: "나누다",
-        operands: [first, second],
-      };
-    }
-    case "나누어떨어지다": {
-      let first = null;
-      let second = null;
-      for (const child of children) {
-        if (equalWord(child.head, 가)) {
-          if (first != null) throw new ParseError();
-          if (children.length !== 1) throw new ParseError();
-          first = concreteToAST(child.children[0]);
-        } else if (equalWord(child.head, 로)) {
-          if (second != null) throw new ParseError();
-          if (children.length !== 1) throw new ParseError();
-          second = concreteToAST(child.children[0]);
-        } else throw new ParseError();
-      }
-      if (first == null || second == null) throw new ParseError();
-      return {
-        type: "op",
-        operator: "나누어떨어지다",
-        operands: [first, second],
-      };
-    }
-    default:
-      throw new ParseError();
-  }
-}
-
-export function concreteToAST(tree: Tree): ASTNode {
-  if (tree.head.type === "symbol") throw new ParseError();
-  if (tree.head.type === "arity") throw new ParseError();
-  if (tree.head.type === "number") {
-    if (tree.children.length === 0) return tree.head.number;
-
-    // m분의 n
-    let operands = matchAndUnwrap(tree.children, [의]);
-    if (operands.length !== 1) throw new ParseError();
-    if (operands[0].head.type !== "word") throw new ParseError();
-    if (operands[0].head.lemma !== "분") throw new ParseError();
-    if (operands[0].children.length !== 1) throw new ParseError();
-    let denominator = concreteToAST(operands[0].children[0]);
-    return {
-      type: "op",
-      operator: "/",
-      operands: [tree.head.number, denominator],
-    };
-  }
-  if (tree.type === "체언") return processNoun(tree.head, tree.children);
-  if (tree.type === "용언") return processVerb(tree.head, tree.children);
-  throw new ParseError();
-}
+/* *************** Function Definition *************** */
 
 type Head =
   | { pos: "명사"; word: string }
@@ -330,10 +66,19 @@ function parseDefinition(definition: string): Definition[] {
   return results;
 }
 
+function toJSValue(value: ValuePack): number | boolean {
+  if (value.values.length !== 1) throw new ParseError('Too many output')
+  const _value = value.values[0]
+  if (_value instanceof 나눔) return _value.값
+  if (typeof _value === 'number') return _value
+  if (typeof _value === 'boolean') return _value
+  throw new ParseError('범위, 이름, 열 반환')
+}
+
 export function run(program: string): number | boolean {
   const blocks = program.split(/\n\n+/g);
 
-  let env: Definition[] = [];
+  let env: Env = null;
   let analyzer = new Analyzer();
   let commands: string[] = [];
 
@@ -349,21 +94,21 @@ export function run(program: string): number | boolean {
       // TODO: relieve
       throw new ParseError("정의는 표제어마다 하나씩만 작성할 수 있습니다.");
     }
-    env.push(...defs);
+    // env.push(...defs);
 
     if (defs[0].head.pos === "명사") analyzer.addNoun(defs[0].head.word);
     else if (defs[0].head.pos === "형용사") analyzer.addAdj(defs[0].head.word);
     else if (defs[0].head.pos === "동사") analyzer.addVerb(defs[0].head.word);
   }
 
-  let value: Value | null = null;
+  let value: ValuePack | null = null;
   for (const command of commands) {
     const tokens = tokenize(command, analyzer);
     const forest = constructForest(tokens);
     for (const tree of forest) {
-      value = interpret(concreteToAST(tree), env); // TODO: update env
+      [env, value] = interpret(env, tree); // TODO: update env
     }
   }
-  if (value == null) throw new ParseError();
-  return value.valueOf();
+  if (value == null) throw new ParseError('Internal Error run::NO_COMMANDS');
+  return toJSValue(value)
 }
