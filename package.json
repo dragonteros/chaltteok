@@ -1,7 +1,7 @@
 {
   "name": "chaltteok",
-  "version": "0.1.0",
-  "description": "국어사전 느낌의 한국어 기반 프로그래밍 언어",
+  "version": "0.1.1",
+  "description": "자연스러운 한국어를 꿈꾸는 프로그래밍 언어",
   "scripts": {
     "build": "microbundle",
     "dev": "microbundle watch --no-compress -f cjs",
