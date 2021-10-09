@@ -2,21 +2,47 @@ import { Yongeon } from "eomi-js";
 
 import { Analyzer, ParseError } from "./analyzer";
 import { tokenize } from "./tokenizer";
-import { constructForest, Tree, Value, ValuePack, Env } from "./parser";
+import {
+  constructForest,
+  Tree,
+  Value,
+  ValuePack,
+  Env,
+  InterpretError,
+} from "./parser";
 
 function interpret(env: Env, ast: Tree): [Env, ValuePack] {
   if (!ast.processor)
     throw new ParseError("Internal Error interpret::NO_PROCESSOR");
-  let newEnv = env;
-  let args: ValuePack[] = [];
-  for (const child of ast.children) {
-    let output;
-    [newEnv, output] = interpret(newEnv, child);
-    args.push(output);
+
+  let frozenEnv: Env | null = null;
+  let frozenArg: ValuePack = {values:[]};
+  let newEnv: Env = env;
+  let newArgs: ValuePack[] = [];
+  while (true) {
+    try {
+      for (const child of ast.children) {
+        let output;
+        [newEnv, output] = interpret(newEnv, child);
+        if (frozenEnv == null) frozenEnv = newEnv;
+        newArgs.push(output);
+      }
+      if (ast.omitIndex != null)
+        newArgs.splice(ast.omitIndex, 0, env.getRegister());
+      return ast.processor(newEnv, ...newArgs);
+    } catch (e) {
+      if (e !== "StopIteration" && e !== "NextIteration") throw e;
+
+      if (e === "StopIteration") {
+        if (frozenEnv == null)
+          throw new InterpretError("Internal Error interpret::NULL_FROZEN_ENV");
+        return [frozenEnv, frozenArg];
+      }
+      frozenEnv = null;
+      frozenArg = newArgs[1];
+      newArgs = [];
+    }
   }
-  if (ast.omitIndex != null)
-    args.splice(ast.omitIndex, 0, newEnv.getRegister());
-  return ast.processor(newEnv, ...args);
 }
 
 /* *************** Function Definition *************** */
@@ -68,7 +94,7 @@ function parseDefinition(definition: string): Definition[] {
   return results;
 }
 
-function toJSValue(env:Env, value: Value): number | boolean {
+function toJSValue(env: Env, value: Value): number | boolean {
   if (typeof value === "number") return value;
   if (typeof value === "boolean") return value;
   if (value.type === "나눔") return value.값;

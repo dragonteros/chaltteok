@@ -14,6 +14,7 @@ export const NOUNS = `
 나머지
 때
 말
+미만
 몫
 방법
 배
@@ -23,12 +24,15 @@ export const NOUNS = `
 수열
 여럿
 이것
+이상
+이하
 자연수
 저
 정수
 제곱
 차
 참
+초과
 함수
 합
 `
@@ -135,6 +139,7 @@ export const ADJECTIVES: Yongeon[] = [
 ];
 
 export const EOMIS: Eomi[] = [
+  new Eomi("거나"),
   new Eomi("게"),
   new Eomi("고"),
   new Eomi("기"),

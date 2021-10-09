@@ -211,7 +211,7 @@ export function extractNumericLiteral(
     if (isNaN(analysis.parsed)) return null;
     if (/[.]\s*$/.test(analysis.consumed)) return null;
     if (/^([.,\s]|$)/.test(analysis.rest) || /\s$/.test(analysis.consumed)) {
-      return [[format(analysis)], analysis.rest];
+      return [[format(analysis)], analysis.rest.trim()];
     }
     const match = analysis.rest.match(/^([^\s.,"]+)\s*(.*)$/);
     if (!match) return null;

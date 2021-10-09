@@ -1,6 +1,6 @@
 import { ParseError, Token, WordToken, POS } from "./analyzer";
 
-class InterpretError extends ParseError {}
+export class InterpretError extends ParseError {}
 
 export function equalWord(word1: Token, word2: WordToken): boolean {
   if (word1.type !== word2.type) return false;
@@ -86,6 +86,7 @@ function spread(f: Processor): Processor {
 
 const add = pure<number>((...nums: number[]) => nums.reduce((x, y) => x + y));
 const mul = pure<number>((...nums: number[]) => nums.reduce((x, y) => x * y));
+
 function setID(env: Env, value: ValuePack, id: ValuePack): [Env, ValuePack] {
   let newEnv = env.clone();
   let _id = id.values[0];
@@ -93,6 +94,17 @@ function setID(env: Env, value: ValuePack, id: ValuePack): [Env, ValuePack] {
     throw new InterpretError("'이름' 자료형의 객체가 와야 합니다.");
   newEnv.set(_id.id, value.values[0]);
   return [newEnv, { values: [] }];
+}
+
+function loop(
+  env: Env,
+  condition: ValuePack,
+  command: ValuePack
+): [Env, ValuePack] {
+  let _cond = condition.values[0];
+  if (typeof _cond !== "boolean")
+    throw new InterpretError("'참거짓' 자료형의 객체가 와야 합니다.");
+  throw _cond ? "StopIteration" : "NextIteration";
 }
 
 // `[...]` means it admits (at most) one ommission (_)
@@ -115,17 +127,41 @@ const BUILTIN_PATTERN: PatternMap = {
   "[{1 수}n 가p] [{1 수}n 로p] 나누어떨어지다v -> {1 참거짓}v": op<number>(
     pure<number>((x, y) => x % y === 0)
   ),
-  "{1 수} 보다p {1 수}n 가p 작다v -> {1 참거짓}v": op<number>(
+  "{1 수}n 보다p {1 수}n 가p 작다v -> {1 참거짓}v": op<number>(
     pure<number>((y, x) => x < y)
   ),
-  "[{1 수}n 가p] {1 수} 보다p 작다v -> {1 참거짓}v": op<number>(
+  "[{1 수}n 가p] {1 수}n 보다p 작다v -> {1 참거짓}v": op<number>(
     pure<number>((x, y) => x < y)
   ),
-  "{1 수} 보다p {1 수}n 가p 크다v -> {1 참거짓}v": op<number>(
+  "{1 수}n 보다p {1 수}n 가p 크다v -> {1 참거짓}v": op<number>(
     pure<number>((y, x) => x > y)
   ),
-  "[{1 수}n 가p] {1 수} 보다p 크다v -> {1 참거짓}v": op<number>(
+  "[{1 수}n 가p] {1 수}n 보다p 크다v -> {1 참거짓}v": op<number>(
     pure<number>((x, y) => x > y)
+  ),
+  "[{1 수}n 가p] {1 수}n 이상n {1 수}n 미만n 이다p -> {1 참거짓}v": op<number>(
+    pure<number>((x, y, z) => y <= x && x < z)
+  ),
+  "[{1 수}n 가p] {1 수}n 이상n {1 수}n 이하n 이다p -> {1 참거짓}v": op<number>(
+    pure<number>((x, y, z) => y <= x && x <= z)
+  ),
+  "[{1 수}n 가p] {1 수}n 초과n {1 수}n 미만n 이다p -> {1 참거짓}v": op<number>(
+    pure<number>((x, y, z) => y < x && x < z)
+  ),
+  "[{1 수}n 가p] {1 수}n 초과n {1 수}n 이하n 이다p -> {1 참거짓}v": op<number>(
+    pure<number>((x, y, z) => y < x && x <= z)
+  ),
+  "[{1 수}n 가p] {1 수}n 이상n 이다p -> {1 참거짓}v": op<number>(
+    pure<number>((x, y) => x >= y)
+  ),
+  "[{1 수}n 가p] {1 수}n 이하n 이다p -> {1 참거짓}v": op<number>(
+    pure<number>((x, y) => x <= y)
+  ),
+  "[{1 수}n 가p] {1 수}n 초과n 이다p -> {1 참거짓}v": op<number>(
+    pure<number>((x, y) => x >= y)
+  ),
+  "[{1 수}n 가p] {1 수}n 미만n 이다p -> {1 참거짓}v": op<number>(
+    pure<number>((x, y) => x < y)
   ),
   "{1 수}n 로p {1 수}n 를p 나누다v -> {1 나눔}v": op<number>(
     pure<number>((y, x) => new 나눔(x, y))
@@ -133,10 +169,10 @@ const BUILTIN_PATTERN: PatternMap = {
   "[{1 수}n 를p] [{1 수}n 로p] 나누다v -> {1 나눔}v": op<number>(
     pure<number>((x, y) => new 나눔(x, y))
   ),
-  "[{1 수}n 에p] {1 수}n 를p 곱하다v -> {1 수}v": op<number>(mul),
+  // "[{1 수}n 에p] {1 수}n 를p 곱하다v -> {1 수}v": op<number>(mul),
   "[{1 수}n 를p] {1 수}n 과p 곱하다v -> {1 수}v": op<number>(mul),
   "[{2+ 수}n 를p] 곱하다v -> {1 수}v": spread(op<number>(mul)),
-  "[{1 수}n 에p] {1 수}n 를p 더하다v -> {1 수}v": op<number>(add),
+  // "[{1 수}n 에p] {1 수}n 를p 더하다v -> {1 수}v": op<number>(add),
   "[{1 수}n 를p] {1 수}n 과p 더하다v -> {1 수}v": op<number>(add),
   "[{2+ 수}n 를p] 더하다v -> {1 수}v": spread(op<number>(add)),
   "{1 수}n 부터p {1 수}n 까지p -> {1 범위}n": op<number>(
@@ -153,7 +189,12 @@ const BUILTIN_PATTERN: PatternMap = {
   ),
 
   "{1 참거짓}v -(으)ㄴ지e -> {1 참거짓}n": id,
-  // "{1 참거짓}v -고e {1 참거짓}v -> {1 참거짓}v": op<boolean>(pure<boolean>((x, y) => x && y)),
+  "{1 참거짓}v -(으)면e {n T}n 아니다v -(으)면e {n T}n -> {n T}n": (
+    env,
+    pred,
+    x,
+    y
+  ) => [env, pred.values[0] ? x : y],
   "{1 참거짓}v -거나e {1 참거짓}v -> {1 참거짓}v": op<boolean>(
     pure<boolean>((x, y) => x || y)
   ),
@@ -163,12 +204,10 @@ const BUILTIN_PATTERN: PatternMap = {
   "{1 참거짓}v -지e 않다v -> {1 참거짓}v": op<boolean>(
     pure<boolean>((x) => !x)
   ),
-  "{1 참거짓}v -면e {n T}n 아니다v -면e {n T}n -> {n T}n": (
-    env,
-    pred,
-    x,
-    y
-  ) => [env, pred.values[0] ? x : y],
+
+  "{1 참거짓}v -(으)ㄹe 때n 까지p {n T}v -다e -> {n T}v": loop,
+  "{1 참거짓}v -(으)ㄹe 때n 까지p {n T}v -(으)ㄴ/-는다e -> {n T}v": loop,
+  "{1 참거짓}v -(으)ㄹe 때n 까지p {n T}v -자e -> {n T}v": loop,
 
   "[{1 T}n 를p] {1 이름}n 로p 두다v -> {}v": setID,
   "[{1 T}n 를p] {1 이름}n 로p 삼다v -> {}v": setID,
@@ -177,20 +216,16 @@ const BUILTIN_PATTERN: PatternMap = {
   "[{1 T}n 를p] {1 이름}n 로p 하다v -> {}v": setID,
   "[{1 T}n 를p] {1 이름}n 이라고p 하다v -> {}v": setID,
 
-  "[{1 T}n 가p] {1 T}n 과p 같다v -> {1 참거짓}v": spread(
-    op<Value>(
-      pure<Value>((...args) => args.slice(1).every((x) => x === args[0]))
-    )
+  "[{1 T}n 가p] {1 T}n 과p 같다v -> {1 참거짓}v": op<Value>(
+    pure<Value>((...args) => args.slice(1).every((x) => x === args[0]))
   ),
   "[{2+ T}n 가p] 같다v -> {1 참거짓}v": spread(
     op<Value>(
       pure<Value>((...args) => args.slice(1).every((x) => x === args[0]))
     )
   ),
-  "[{1 T}n 가p] {1 T}n 과p 다르다v -> {1 참거짓}v": spread(
-    op<Value>(
-      pure<Value>((...args) => args.slice(1).every((x) => x === args[0]))
-    )
+  "[{1 T}n 가p] {1 T}n 과p 다르다v -> {1 참거짓}v": op<Value>(
+    pure<Value>((...args) => args.slice(1).some((x) => x !== args[0]))
   ),
   "[{2+ T}n 가p] 다르다v -> {1 참거짓}v": spread(
     op<Value>(
@@ -203,7 +238,7 @@ const BUILTIN_PATTERN: PatternMap = {
   "{1 T}n 가p {1 T}n 이다p -> {1 참거짓}v": op<Value>(
     pure<Value>((x, y) => x === y)
   ),
-  "[{1 T}n 가p] {1 T} 가p 아니다v -> {1 참거짓}v": op<Value>(
+  "[{1 T}n 가p] {1 T}n 가p 아니다v -> {1 참거짓}v": op<Value>(
     pure<Value>((x, y) => x !== y)
   ),
   // 사용자가 새 자료형 만들면 추가됨
@@ -228,19 +263,32 @@ const BUILTIN_PATTERN: PatternMap = {
   },
   "{n T}v -(으)ㄴe -> {n T}d": id,
   "{n T}v -(으)ㄴ다/-는다e -> {n T}v": id,
-  "{n T}v -(으)ㄹe -> {n T}d": id,
+  // "{n T}v -(으)ㄹe -> {n T}d": id,
   "{n T}v -(으)ㅁe -> {n T}n": id,
   "{n T}v -고e -> {}": function (env, pack): [Env, ValuePack] {
     let newEnv = env.clone();
     newEnv.setRegister(pack);
     return [newEnv, { values: [] }];
   },
+  "{n T}v -게e 되다v -> {n T}v": id,
   "{n T}v -기e -> {n T}n": id,
   "{n T}v -는e -> {n T}d": id,
   "{n T}v -다e -> {n T}v": id,
   "{n T}v -자e -> {n T}v": id,
 
-  "{} {n T}v -> {n T}v": (env, _, cur) => [env, cur], // TODO: logical and
+  "{} {n T}v -> {n T}v": function (env, _, cur) {
+    if (cur.values.length === 1) {
+      let b = cur.values[0];
+      if (typeof b === "boolean") {
+        const reg = env.register;
+        if (reg != null && reg.values.length === 1) {
+          let a = reg.values[0];
+          if (typeof a === "boolean") return [env, { values: [a && b] }];
+        }
+      }
+    }
+    return [env, cur];
+  },
 };
 
 type SimpleTerm = { type: "simple"; token: Token; pos: POS };
@@ -478,15 +526,34 @@ let patternList: Pattern[] = Object.entries(BUILTIN_PATTERN).map(
   ([p, f]) => new Pattern(p, f)
 );
 
-function _stackOperation(
-  stack: (Tree | ",")[]
-): [number, Tree] | "COMMA" | null {
+function _matchPattern(stack: (Tree | ",")[]): [number, Tree] | "COMMA" | null {
   for (const pattern of patternList) {
     const match = pattern.match(stack);
     if (!match) continue;
     return match;
   }
   return null;
+}
+
+function _stackOperation(stack: (Tree | ",")[]): (Tree | ",")[] {
+  stack = stack.slice();
+  while (stack.length >= 2) {
+    const match = _matchPattern(stack);
+    if (!match) break;
+    else if (match === "COMMA") {
+      const commaIdx = stack.lastIndexOf(",");
+      if (commaIdx === -1)
+        throw new ParseError("Internal Error parseSentence::COMMA_NOT_FOUND");
+      stack.splice(commaIdx, 1);
+      break;
+    }
+
+    const [consumed, output] = match;
+    if (consumed === 0)
+      throw new ParseError("Internal Error parseSentence::NOT_CONSUMED");
+    stack.splice(-consumed, consumed, output);
+  }
+  return stack;
 }
 
 function parseSentence(tokens: Token[]): Tree {
@@ -502,22 +569,13 @@ function parseSentence(tokens: Token[]): Tree {
   for (const leaf of stream) {
     stack.push(leaf);
     if (leaf === ",") continue;
-    while (stack.length >= 2) {
-      const match = _stackOperation(stack);
-      if (!match) break;
-      else if (match === "COMMA") {
-        const idx = stack.lastIndexOf(",");
-        if (idx === -1)
-          throw new ParseError("Internal Error parseSentence::COMMA_NOT_FOUND");
-        stack.splice(idx, 1);
-        break;
-      }
-
-      const [consumed, output] = match;
-      if (consumed === 0)
-        throw new ParseError("Internal Error parseSentence::NOT_CONSUMED");
-      stack.splice(-consumed, consumed, output);
-    }
+    stack = _stackOperation(stack);
+  }
+  while (stack.length > 1) {
+    const commaIdx = stack.lastIndexOf(",");
+    if (commaIdx === -1) break;
+    stack.splice(commaIdx, 1);
+    stack = _stackOperation(stack);
   }
   if (stack.length !== 1) throw new ParseError("구문이 올바르지 않습니다.");
   if (stack[0] === ",")

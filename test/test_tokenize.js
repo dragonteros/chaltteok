@@ -81,12 +81,12 @@ describe("품사 분석", function () {
 
     it("순접", function () {
       assertTokenized(
-        "1에 2를 더하고 3을 곱하다",
-        "1n 에p 2n 를p 더하다v -고e 3n 를p 곱하다v -다e"
+        "1을 2와 더하고 3을 곱하다",
+        "1n 를p 2n 과p 더하다v -고e 3n 를p 곱하다v -다e"
       );
       assertTokenized(
-        "1에 2를 더하고 3을 곱한 값",
-        "1n 에p 2n 를p 더하다v -고e 3n 를p 곱하다v -(으)ㄴe 값n"
+        "1을 2와 더하고 3을 곱한 값",
+        "1n 를p 2n 과p 더하다v -고e 3n 를p 곱하다v -(으)ㄴe 값n"
       );
     });
 

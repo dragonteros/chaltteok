@@ -232,28 +232,28 @@ describe("구문 분석", function () {
 
   it("순접", function () {
     assertForest(
-      "1n 에p 2n 를p 더하다v -고e 3n 를p 곱하다v -다e .",
+      "1n 를p 2n 과p 더하다v -고e 3n 과p 곱하다v -다e .",
       `
 {n T}v -다e -> {n T}v
   {} {n T}v -> {n T}v
     {n T}v -고e -> {}
-      [{1 수}n 에p] {1 수}n 를p 더하다v -> {1 수}v
+      [{1 수}n 를p] {1 수}n 과p 더하다v -> {1 수}v
         1n
         2n
-    [{1 수}n 에p] {1 수}n 를p 곱하다v -> {1 수}v
+    [{1 수}n 를p] {1 수}n 과p 곱하다v -> {1 수}v
       3n`
     );
     assertForest(
-      "1n 에p 2n 를p 더하다v -고e 3n 를p 곱하다v -(으)ㄴe 값n .",
+      "1n 를p 2n 과p 더하다v -고e 3n 과p 곱하다v -(으)ㄴe 값n .",
       `
 {1 수}d 값n -> {1 수}n
   {n T}v -(으)ㄴe -> {n T}d
     {} {n T}v -> {n T}v
       {n T}v -고e -> {}
-        [{1 수}n 에p] {1 수}n 를p 더하다v -> {1 수}v
+        [{1 수}n 를p] {1 수}n 과p 더하다v -> {1 수}v
           1n
           2n
-      [{1 수}n 에p] {1 수}n 를p 곱하다v -> {1 수}v
+      [{1 수}n 를p] {1 수}n 과p 곱하다v -> {1 수}v
         3n`
     );
   });

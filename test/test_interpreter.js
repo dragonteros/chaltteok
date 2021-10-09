@@ -126,29 +126,87 @@ describe("산술", function () {
   });
 });
 
-describe("조건", function () {
-  it("참거짓", function () {
+describe("참거짓", function () {
+  it("기본", function () {
     assertInterpret("참.", true);
     assertInterpret("거짓.", false);
-  });
-  it("기본", function () {
     assertInterpret("1이 2보다 작다.", true);
-    assertInterpret("1을 '변수'라고 하고 '변수'가 5보다 작으면 10 아니면 0을 -5와 더한다.", 5);
-    assertInterpret("7을 '변수'라고 하고 '변수'가 5보다 작으면 10 아니면 0을 -5와 더한다.", -5);
+    assertInterpret("1이 5 이상 10 미만이다.", false);
+    assertInterpret("1이 -5 이상 2 이하이다.", true);
+    assertInterpret("3이 3 이상 4 이하이다.", true);
+    assertInterpret("3이 3 초과 4 이하이다.", false);
+    assertInterpret("3이 3 이상 4 미만이다.", true);
+    assertInterpret("3이 3 초과 4 미만이다.", false);
+    assertInterpret("3.5가 3 초과 4 미만이다.", true);
+    assertInterpret("4가 3 이상 4 이하이다.", true);
+    assertInterpret("4가 3 초과 4 이하이다.", true);
+    assertInterpret("4가 3 이상 4 미만이다.", false);
+    assertInterpret("4가 3 초과 4 미만이다.", false);
+    assertInterpret("3이 3 이상 3 이하이다.", true);
+    assertInterpret("3이 3 이상 3 미만이다.", false);
+    assertInterpret("3이 3 초과 3 미만이다.", false);
+  });
+  it("분기", function () {
+    assertInterpret(
+      "1을 '변수'라고 하고 '변수'가 5보다 작으면 10 아니면 0을 -5와 더한다.",
+      5
+    );
+    assertInterpret(
+      "7을 '변수'라고 하고 '변수'가 5보다 작으면 10 아니면 0을 -5와 더한다.",
+      -5
+    );
+  });
+  it("논리 연산", function () {
+    assertInterpret(
+      "1을 '변수'라고 하고 '변수'가 5보다 크고 '변수'가 10보다 작으면 10 아니면 0을 -5와 더한다.",
+      -5
+    );
+    assertInterpret(
+      "1을 '변수'라고 하고 '변수'가 5보다 작거나 '변수'가 10보다 크면 10 아니면 0을 -5와 더한다.",
+      5
+    );
   });
 });
 
 describe("프로그램", function () {
   it("변수 선언", function () {
     let defs = `
-1을 '초깃값'으로 삼는다.
-마이너스 이를 '차분'으로 두자.
-`;
+      1을 '초깃값'으로 삼는다.
+      마이너스 이를 '차분'으로 두자.`;
     assertInterpret(defs + "'초깃값'과 '차분'의 합.", -1);
     defs += `
     '초깃값'과 '차분'의 합이 '현재값'이 된다.
     '현재값'과 '차분'의 합이 '현재값'으로 된다.
-    `
+    `;
     assertInterpret(defs + "'현재값'.", -3);
+  });
+  it("반복", function () {
+    let defs = `
+      0을 '지표'로 삼고 2를 '결과'라고 하자.
+      '지표'가 0과 같을 때까지 '결과'의 제곱을 '결과'로 삼고
+      '지표'와 1의 합을 '지표'로 하자.`;
+    assertInterpret(defs + "'결과'.", 2);
+    defs = `
+      0을 '지표'로 삼고 2를 '결과'라고 하자.
+      '지표'가 5와 같을 때까지 '결과'의 제곱을 '결과'로 삼고
+      '지표'와 1의 합을 '지표'로 하자.`;
+    assertInterpret(defs + "'결과'.", Math.pow(2, 32));
+  });
+  it("반복 변형", function () {
+    let defs = `
+      0을 '지표'로 삼고 2를 '결과'라고 하자.
+      '지표'가 5와 같게 될 때까지 '결과'의 제곱을 '결과'로 삼고
+      '지표'와 1의 합을 '지표'로 하자.`;
+    assertInterpret(defs + "'결과'.", Math.pow(2, 32));
+    defs = `
+      0을 '지표'로 삼고 2를 '결과'라고 하자.
+      '지표'가 5와 다르지 않을 때까지 '결과'의 제곱을 '결과'로 삼고
+      '지표'와 1의 합을 '지표'로 하자.`;
+    assertInterpret(defs + "'결과'.", Math.pow(2, 32));
+    defs = `
+      0을 '지표'로 삼고 2를 '결과'라고 하자.
+      '지표'가 5와 다르지 않게 될 때까지 '결과'의 제곱을 '결과'로 삼고
+      '지표'와 1의 합을 '지표'로 하자.`;
+    assertInterpret(defs + "'결과'.", Math.pow(2, 32));
   });
 });
