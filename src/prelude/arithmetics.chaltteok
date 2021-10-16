@@ -1,0 +1,136 @@
+갑절 [명사] -> 두 곱절
+
+곱 [명사]
+여러 수의 곱: {
+  returns('1 수');
+  return f((nums) => [nums.reduce((x, y) => x * y)]);
+}
+
+곱절 [명사]
+얼마의 몇 곱절: 앞의 수와 뒤의 수의 곱.
+
+곱하다 [동사] 곱하여/곱해, 곱하니
+얼마와 얼마를 곱하다: {
+  returns('1 수');
+  return f(([x], [y]) => [x * y]);
+}
+여러 수를 모두 곱하다: {
+  returns('1 수');
+  return f((numbers) => [numbers.reduce((x, y) => x * y)]);
+}
+어느 변수에 얼마를 곱하다: {
+  needs('1 수 변수', '1 수');
+  returns('1 수 변수');
+  return f(function ([name], [num]) {
+    const value = env.get(name)[0] * num;
+    env.set(name, [value]);
+    return [name];
+  })
+}
+
+(
+  나눔 [명사]: {
+    function 나눔(dividend, divisor) {
+      const remainder = dividend % divisor;
+      this.값 = dividend / divisor;
+      this.몫 = (dividend - remainder) / divisor;
+      this.나머지: remainder;
+    }
+    env.setFunction('나눔', 나눔);
+  }
+)
+무엇의 값: {
+  needs('1 나눔');
+  returns('1 수');
+  return f(([division]) => [division.값]);
+}
+몫 [명사]
+무엇의 몫: {
+  needs('1 나눔');
+  returns('1 수');
+  return f(([division]) => [division.몫]);
+}
+나머지 [명사]
+무엇의 나머지: {
+  needs('1 나눔');
+  returns('1 수');
+  return f(([division]) => [division.나머지]);
+}
+
+나누다 [동사] 나누어/나눠, 나누니
+얼마를 얼마로 나누다: {
+  returns('1 나눔');
+  return f(([dividend], [divisor]) => {
+    const 나눔 = env.getFunction('나눔');
+    return [new 나눔(dividend, divisor)];
+  });
+}
+
+나누어떨어지다 [동사] 나누어떨어져, 나누어떨어지니
+얼마가 얼마로 나누어떨어지다: { 
+  returns('1 참거짓');
+  return f(([x], [y]) => [x % y === 0]);
+}
+
+더하다 [동사] 더하여/더해, 더하니
+얼마와 얼마를 더하다: {
+  returns('1 수');
+  return f(([x], [y]) => [x + y]);
+}
+여러 수를 모두 더하다: {
+  returns('1 수');
+  return f((numbers) => [numbers.reduce((x, y) => x + y)]);
+}
+어느 변수에 얼마를 더하다: {
+  needs('1 수 변수', '1 수');
+  returns('1 수 변수');
+  return f(function ([name], [num]) {
+    const value = env.get(name)[0] + num;
+    env.set(name, [value]);
+    return [name];
+  })
+}
+
+배 [명사] -> 곱절
+
+-분 [접미사]
+얼마분의 얼마: {
+  returns('1 수');
+  return f(([x], [y]) => [y / x]);
+}
+
+빼다 [동사] 빼어/빼, 빼니
+얼마에서 얼마를 빼다: {
+  needs('1 수');
+  returns('1 수');
+  return f(([x], [y]) => [x - y]);
+}
+어느 변수에서 얼마를 빼다: {
+  needs('1 수 변수', '1 수');
+  returns('1 수 변수');
+  return f(function ([name], [num]) {
+    const value = env.get(name)[0] - num;
+    env.set(name, [value]);
+    return [name];
+  })
+}
+
+-제곱 [접미사]
+얼마의 몇제곱: {
+  returns('1 수', '명사');
+  return f(([x], [y]) => [Math.pow(x, y)]);
+}
+
+제곱 [명사] -> 두제곱
+
+차 [명사]
+두 수의 차: { 
+  returns('1 수');
+  return f(([x, y]) => [Math.abs(x - y)]);
+}
+
+합 [명사]
+여러 수의 합: {
+  returns('1 수');
+  return f((numbers) => [numbers.reduce((x, y) => x + y)]);
+}

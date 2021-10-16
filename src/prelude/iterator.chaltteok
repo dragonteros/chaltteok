@@ -1,0 +1,30 @@
+범위 [명사]
+(
+  {
+    function 범위(bgn, end) {
+      this.bgn = bgn;
+      this.end = end;
+    }
+    env.setFunction('범위', 범위);
+  }
+)
+
+
+시작 [명사]
+끝 [명사]
+어느 범위의 시작: {
+  returns('수');
+  return f(([range]) => [range.bgn]);
+}
+어느 범위의 끝: {
+  returns('수');
+  return f(([range]) => [range.end]);
+}
+
+얼마부터 얼마까지: {
+  returns('범위', '명사')
+  return f(([x], [y]) => {
+    const 범위 = env.getFunction('범위');
+    return [new 범위(x, y)];
+  });
+}

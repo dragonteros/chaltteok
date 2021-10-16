@@ -1,6 +1,5 @@
 import { getJosaPicker } from "josa";
 
-import { DETERMINERS, ADVERBS } from "./vocabulary";
 import {
   ParseError,
   Analyzer,
@@ -8,6 +7,7 @@ import {
   extractNumericLiteral,
   extractArityDesignator,
 } from "./analyzer";
+import { toAbbr } from "./utils";
 
 const 을 = getJosaPicker("을");
 
@@ -24,19 +24,22 @@ function _makeSet(items: Token[][]) {
   return result;
 }
 
-function tagPOS(chunk: string, analyzer: Analyzer): Token[] {
+const FORBIDDEN = [/v -지e (아니하|않)다a/, /a -지e (아니하|않)다v/];
+const isForbidden = (x: string) => FORBIDDEN.some((p) => p.test(x));
+
+function tagPOS(past: string, chunk: string, analyzer: Analyzer): Token[] {
   let results: Token[][] = [];
   if (".,".includes(chunk)) results.push([{ type: "symbol", symbol: chunk }]);
-  if (DETERMINERS.includes(chunk))
-    results.push([{ type: "word", lemma: chunk, pos: "관형사" }]);
-  if (ADVERBS.includes(chunk))
-    results.push([{ type: "word", lemma: chunk, pos: "부사" }]);
   results.push(...analyzer.analyze(chunk));
 
-  const _result = extractArityDesignator(chunk);
-  if (_result != null) results.push(_result);
+  const _result = extractArityDesignator(chunk, analyzer);
+  if (_result != null) results.push(..._result);
 
-  results = _makeSet(results);
+  results = _makeSet(results).filter(
+    (hypothesis) =>
+      !isForbidden([past].concat(hypothesis.map(toAbbr)).join(" "))
+  );
+
   if (results.length > 1)
     throw new ParseError("어절 '" + chunk + "'의 해석이 모호합니다.");
   if (results.length === 0)
@@ -46,13 +49,27 @@ function tagPOS(chunk: string, analyzer: Analyzer): Token[] {
   return results[0];
 }
 
-function tokenize(sentence: string, analyzer: Analyzer): Token[] {
+function tokenize(
+  sentence: string,
+  analyzer: Analyzer,
+): Token[] {
   let result: Token[] = [];
-  sentence = sentence.trim().replace(/\s+/g, ' ').replace(/\(.*?\)/g, '');
+  let past: string = "";
+  function push(...args: Token[]) {
+    result.push(...args);
+    past = [past].concat(args.map(toAbbr)).join(" ");
+  }
+  sentence = sentence
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\(.*?\)/g, "");
   while (sentence.length > 0) {
-    let _result = extractNumericLiteral(sentence);
+    let _result = extractNumericLiteral(sentence, analyzer);
     if (_result != null) {
-      result.push(..._result[0]);
+      const analyses = _result[0];
+      if (analyses.length !== 1)
+        throw new ParseError("구문 '" + sentence + "'의 해석이 모호합니다.");
+      push(..._result[0][0]);
       sentence = _result[1];
       continue;
     }
@@ -60,7 +77,7 @@ function tokenize(sentence: string, analyzer: Analyzer): Token[] {
     const splitPattern = /^([^\s,."]+|[,.]|"[^"]*")\s*(.*)$/;
     const splitted = sentence.match(splitPattern);
     if (!splitted) break;
-    result.push(...tagPOS(splitted[1], analyzer));
+    push(...tagPOS(past, splitted[1], analyzer));
     sentence = splitted[2];
   }
   return result;

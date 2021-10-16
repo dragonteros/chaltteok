@@ -1,17 +1,8 @@
-import { josa } from "josa";
+import { josa, getJosaPicker } from "josa";
 
-import { Yongeon, Analyzer as YongeonAnalyzer } from "eomi-js";
+import { Yongeon, Analyzer as YongeonAnalyzer, Eomi } from "eomi-js";
 import { extractAndProcessNumber, Analysis } from "kor-to-number";
 
-import {
-  NOUNS,
-  JOSAS,
-  ADJECTIVES,
-  VERBS,
-  VERB_EOMIS,
-  EOMIS,
-  SUFFIXES,
-} from "./vocabulary";
 import { Trie } from "./trie";
 
 export class ParseError extends Error {
@@ -21,28 +12,30 @@ export class ParseError extends Error {
 }
 
 export type POS =
-  | "체언"
-  | "용언"
+  | "명사"
+  | "대명사"
+  | "동사"
+  | "형용사"
   | "관형사"
   | "부사"
   | "조사"
   | "어미"
   | "접미사";
 
-export type IDToken = { type: "id"; lemma: string; pos: "체언" };
+export type IDToken = { type: "id"; lemma: string; pos: "명사" };
 export type WordToken = { type: "word"; lemma: string; pos: POS };
 export type SymbolToken = { type: "symbol"; symbol: string };
 export type ArityToken = {
   type: "arity";
   lemma: string;
   number: number;
-  pos: "체언";
+  pos: "명사";
 };
 export type NumberToken = {
   type: "number";
   lemma: string;
   number: number;
-  pos: "체언";
+  pos: "명사";
 };
 
 export type Token =
@@ -75,14 +68,80 @@ function N(x: string) {
   return x.split("").map(compatToJongseong).join("").normalize("NFD");
 }
 
+type JosaEntry = {
+  lemma: string;
+  forms: string[];
+  realize: (n: string) => string;
+};
+const 로: JosaEntry = {
+  lemma: "로",
+  forms: ["로", "으로"],
+  realize: getJosaPicker("로"),
+};
+
+function endsInJongseong(x: string): boolean {
+  if (x.length === 0) return false;
+  let codepoint = x.charCodeAt(x.length - 1);
+  if (codepoint < "가".charCodeAt(0)) return false;
+  if (codepoint > "힣".charCodeAt(0)) return false;
+  return (codepoint - 0xac00) % 28 !== 0;
+}
+export function makeJosa(
+  afterConsonant: string,
+  afterVowel?: string
+): JosaEntry {
+  const _afterVowel: string = afterVowel || afterConsonant;
+  const lemma = afterConsonant < _afterVowel ? afterConsonant : _afterVowel;
+  let forms = [afterConsonant];
+  if (afterConsonant !== _afterVowel) forms.push(_afterVowel);
+  function realize(n: string): string {
+    return endsInJongseong(n) ? afterConsonant : _afterVowel;
+  }
+  return { lemma, forms, realize };
+}
+
 class NounAnalyzer {
   nouns: Trie<string>;
-  constructor(nouns: string[]) {
+  suffixes: string[];
+  idaAnalyzer: YongeonAnalyzer;
+  daAnalyzer: YongeonAnalyzer;
+  josas: JosaEntry[];
+
+  constructor(
+    nouns: string[],
+    suffixes: string[],
+    eomis: Eomi[],
+    josas: JosaEntry[]
+  ) {
     this.nouns = new Trie();
+    this.suffixes = suffixes;
     for (const noun of nouns) this.addNoun(noun);
+
+    eomis = eomis.concat([new Eomi("ㅁ"), new Eomi("기")]);
+    this.idaAnalyzer = new YongeonAnalyzer([new Yongeon("이다")], eomis);
+    this.daAnalyzer = new YongeonAnalyzer(
+      [new Yongeon("이다"), new Yongeon("다", "여")],
+      eomis
+    );
+
+    this.josas = [];
+    for (const josa of josas) this.addJosa(josa);
+    this.addJosa(로);
   }
   addNoun(noun: string): void {
     this.nouns.set(N(noun), noun);
+  }
+  addSuffix(suffix: string) {
+    this.suffixes.push(suffix);
+  }
+  addEomi(eomi: Eomi) {
+    this.idaAnalyzer.addEomi(eomi);
+    this.daAnalyzer.addEomi(eomi);
+  }
+  addJosa(josa: JosaEntry) {
+    this.josas.push(josa);
+    this.addEomi(new Eomi("ㅁ" + josa.realize("임")));
+    this.addEomi(new Eomi("기" + josa.realize("기")));
   }
   analyze(target: string): (WordToken | IDToken)[][] {
     let candidates: [string, string][];
@@ -94,111 +153,219 @@ class NounAnalyzer {
     }
     let results: (WordToken | IDToken)[][] = [];
     for (const [noun, rest] of candidates) {
-      let analyzed = analyzeNounChunk(noun, rest);
-      if (!analyzed) continue;
-      if (!quoteMatch) results.push(analyzed);
-      else {
-        let newAnalysis: (WordToken | IDToken)[] = analyzed;
-        newAnalysis[0].type = "id";
-        results.push(newAnalysis);
+      const analyses = this._analyze(noun, rest);
+      for (const analysis of analyses) {
+        if (!quoteMatch) results.push(analysis);
+        else {
+          let newAnalysis: (WordToken | IDToken)[] = analysis;
+          newAnalysis[0].type = "id";
+          results.push(newAnalysis);
+        }
       }
     }
     return results;
   }
-}
 
-function processJosa(josa: string): WordToken[] {
-  josa = josa.trim();
-  if (josa === "") return [];
-  if (josa.slice(0, 2) === "이-") {
-    return [
-      { type: "word", lemma: "이다", pos: "조사" },
-      { type: "word", lemma: josa.slice(1), pos: "어미" },
-    ];
-  }
-  return [{ type: "word", lemma: josa, pos: "조사" }];
-}
-
-function analyzeNounChunk(noun: string, rest: string): WordToken[] | null {
-  rest = N(rest);
-  let result: WordToken[] = [{ type: "word", lemma: noun, pos: "체언" }];
-  while (rest.length) {
-    let suffix = SUFFIXES.find((x) => rest.startsWith(N(x)));
-    if (!suffix) break;
-    rest = rest.slice(N(suffix).length);
-    result.push({ type: "word", lemma: suffix, pos: "접미사" });
-  }
-  if (!rest.length) return result;
-
-  const consumed = result[result.length - 1].lemma;
-  const josaEntry = /[가-힣]$/.test(consumed)
-    ? JOSAS.find((entry) => N(entry.realize(consumed)) === rest)
-    : JOSAS.find((entry) => entry.forms.map(N).includes(rest));
-  if (!josaEntry) return null;
-  result.push(...processJosa(josaEntry.lemma));
-  return result;
-}
-
-export class Analyzer {
-  nouns: string[];
-  adjectives: Yongeon[];
-  verbs: Yongeon[];
-  nounAnalyzer: NounAnalyzer;
-  adjAnalyzer: YongeonAnalyzer;
-  verbAnalyzer: YongeonAnalyzer;
-
-  constructor(nouns?: string[], adjs?: Yongeon[], verbs?: Yongeon[]) {
-    this.nouns = nouns || NOUNS.slice();
-    this.adjectives = adjs || ADJECTIVES.slice();
-    this.verbs = verbs || VERBS.slice();
-    this.nounAnalyzer = new NounAnalyzer(this.nouns);
-    this.adjAnalyzer = new YongeonAnalyzer(this.adjectives, EOMIS);
-    this.verbAnalyzer = new YongeonAnalyzer(this.verbs, VERB_EOMIS);
-  }
-  clone() {
-    return new Analyzer(
-      this.nouns.slice(),
-      this.adjectives.slice(),
-      this.verbs.slice()
-    );
-  }
-
-  addNoun(noun: string) {
-    this.nouns.push(noun);
-    this.nounAnalyzer.addNoun(noun);
-  }
-  addAdj(adj: Yongeon) {
-    this.adjectives.push(adj);
-    this.adjAnalyzer.addYongeon(adj);
-  }
-  addVerb(verb: Yongeon) {
-    this.verbs.push(verb);
-    this.verbAnalyzer.addYongeon(verb);
-  }
-
-  analyze(chunk: string): Token[][] {
-    let results: Token[][] = this.nounAnalyzer.analyze(chunk);
-    for (const [stem, eomi] of this.adjAnalyzer.analyze(chunk)) {
-      results.push([
-        { type: "word", lemma: stem.valueOf(), pos: "용언" },
-        { type: "word", lemma: eomi.valueOf(), pos: "어미" },
-      ]);
+  _analyze(noun: string, rest: string): WordToken[][] {
+    const token: WordToken = { type: "word", lemma: noun, pos: "명사" };
+    let results: WordToken[][] = [];
+    for (const [analysis, _rest] of this._analyzeSuffix(rest)) {
+      const _analysis = [token].concat(analysis);
+      if (!_rest.trim()) {
+        results.push(_analysis);
+        continue;
+      }
+      const consumed = _analysis[_analysis.length - 1].lemma;
+      for (const _josa of this._analyzeJosa(consumed, _rest))
+        results.push(_analysis.concat([_josa]));
+      for (const __analysis of this._analyzeIda(consumed, _rest))
+        results.push(_analysis.concat(__analysis));
     }
-    for (const [stem, eomi] of this.verbAnalyzer.analyze(chunk)) {
-      results.push([
-        { type: "word", lemma: stem.valueOf(), pos: "용언" },
-        { type: "word", lemma: eomi.valueOf(), pos: "어미" },
-      ]);
+    return results;
+  }
+
+  _analyzeSuffix(rest: string): [WordToken[], string][] {
+    rest = N(rest);
+
+    let results: [WordToken[], string][] = [[[], rest]];
+    if (!rest.length) return results;
+
+    for (const suffix of this.suffixes) {
+      if (!rest.startsWith(N(suffix))) continue;
+      const analyses = this._analyzeSuffix(rest.slice(N(suffix).length));
+      for (const [analysis, _rest] of analyses) {
+        results.push([
+          [{ type: "word", lemma: suffix, pos: "접미사" }, ...analysis],
+          _rest,
+        ]);
+      }
+    }
+    return results;
+  }
+
+  _analyzeJosa(consumed: string, rest: string): WordToken[] {
+    const test = /[가-힣]$/.test(consumed)
+      ? (entry: JosaEntry) => N(entry.realize(consumed)) === rest
+      : (entry: JosaEntry) => entry.forms.map(N).includes(rest);
+    return this.josas
+      .filter(test)
+      .map((entry) => ({ type: "word", lemma: entry.lemma, pos: "조사" }));
+  }
+
+  _analyzeIda(consumed: string, rest: string): WordToken[][] {
+    const analyzer =
+      /[가-힣]$/.test(consumed) && endsInJongseong(consumed)
+        ? this.idaAnalyzer
+        : this.daAnalyzer;
+
+    let results: WordToken[][] = [];
+    let visited: string[] = [];
+    for (const [_, eomi] of analyzer.analyze(rest)) {
+      let _eomi = eomi.valueOf();
+      if (visited.includes(_eomi)) continue;
+      else visited.push(_eomi);
+
+      let josa = "";
+      if (_eomi.length > 2 && _eomi.slice(0, 2) === "-기")
+        [_eomi, josa] = [_eomi.slice(0, 2), _eomi.slice(2)];
+      else if (_eomi.length > 5 && _eomi.slice(0, 5) === "-(으)ㅁ")
+        [_eomi, josa] = [_eomi.slice(0, 5), _eomi.slice(5)];
+
+      let analysis: WordToken[] = [
+        { type: "word", lemma: "이다", pos: "조사" },
+        { type: "word", lemma: _eomi, pos: "어미" },
+      ];
+      if (josa) analysis.push({ type: "word", lemma: josa, pos: "조사" });
+      results.push(analysis);
     }
     return results;
   }
 }
 
+class SimpleAnalyzer {
+  words: string[];
+  pos: POS;
+  constructor(words: string[], pos: POS) {
+    this.words = words;
+    this.pos = pos;
+  }
+  add(word: string) {
+    this.words.push(word);
+  }
+  analyze(chunk: string): Token[][] {
+    if (!this.words.includes(chunk)) return [];
+    return [[{ type: "word", lemma: chunk, pos: this.pos }]];
+  }
+}
+
+export class Analyzer {
+  nounAnalyzer: NounAnalyzer;
+
+  adjAnalyzer: YongeonAnalyzer;
+  verbAnalyzer: YongeonAnalyzer;
+  anidaAnalyzer: YongeonAnalyzer;
+  issdaAnalyzer: YongeonAnalyzer;
+  bothAnalyzer: YongeonAnalyzer;
+
+  advAnalyzer: SimpleAnalyzer;
+  detAnalyzer: SimpleAnalyzer;
+
+  constructor() {
+    this.nounAnalyzer = new NounAnalyzer([], [], [], []);
+
+    const anihada = [new Yongeon("아니하다", "아니하여"), new Yongeon("않다")];
+    const eomis = [new Eomi("ㅁ"), new Eomi("기")];
+    this.adjAnalyzer = new YongeonAnalyzer(anihada, eomis);
+    this.verbAnalyzer = new YongeonAnalyzer(anihada, eomis);
+    this.anidaAnalyzer = new YongeonAnalyzer([new Yongeon("아니다")], eomis);
+    this.issdaAnalyzer = new YongeonAnalyzer(
+      [new Yongeon("있다"), new Yongeon("없다")],
+      eomis
+    );
+    this.bothAnalyzer = new YongeonAnalyzer(
+      [new Yongeon("어찌/어떠하다", "어찌/어떠하여")],
+      eomis
+    );
+
+    this.advAnalyzer = new SimpleAnalyzer([], "부사");
+    this.detAnalyzer = new SimpleAnalyzer([], "관형사");
+  }
+
+  add(word: string, pos: POS) {
+    switch (pos) {
+      case "명사":
+      case "대명사":
+        this.nounAnalyzer.addNoun(word);
+        return;
+      case "접미사":
+        this.nounAnalyzer.addSuffix(word);
+        return;
+      case "관형사":
+        this.detAnalyzer.add(word);
+        return;
+      case "부사":
+        this.advAnalyzer.add(word);
+        return;
+    }
+    throw new ParseError("Internal Error Analyzer::add::ILLEGAL_POS " + pos);
+  }
+  addAdj(adj: Yongeon) {
+    this.adjAnalyzer.addYongeon(adj);
+  }
+  addVerb(verb: Yongeon) {
+    this.verbAnalyzer.addYongeon(verb);
+  }
+  addEomi(eomi: Eomi, attachTo: string[]) {
+    if (attachTo.includes("형용사")) {
+      this.adjAnalyzer.addEomi(eomi);
+      this.anidaAnalyzer.addEomi(eomi);
+    }
+    if (attachTo.includes("동사")) this.verbAnalyzer.addEomi(eomi);
+    if (attachTo.includes("이다")) this.nounAnalyzer.addEomi(eomi);
+    if (attachTo.includes("아니다")) this.anidaAnalyzer.addEomi(eomi);
+    if (attachTo.includes("있다")) this.issdaAnalyzer.addEomi(eomi);
+    if (attachTo.includes("동사") && attachTo.includes("형용사"))
+      this.bothAnalyzer.addEomi(eomi);
+  }
+  addJosa(josa: JosaEntry) {
+    this.nounAnalyzer.addJosa(josa);
+  }
+
+  analyze(chunk: string): Token[][] {
+    let results: Token[][] = [];
+    results.push(...this.advAnalyzer.analyze(chunk));
+    results.push(...this.detAnalyzer.analyze(chunk));
+    results.push(...this.nounAnalyzer.analyze(chunk));
+
+    const yongeonAnalyzers: [YongeonAnalyzer, POS][] = [
+      [this.verbAnalyzer, "동사"],
+      [this.adjAnalyzer, "형용사"],
+      [this.issdaAnalyzer, "형용사"],
+      [this.anidaAnalyzer, "형용사"],
+      [this.bothAnalyzer, "형용사"],
+    ];
+    for (const [analyzer, pos] of yongeonAnalyzers) {
+      for (const [stem, eomi] of analyzer.analyze(chunk)) {
+        results.push([
+          { type: "word", lemma: stem.valueOf(), pos },
+          { type: "word", lemma: eomi.valueOf(), pos: "어미" },
+        ]);
+      }
+    }
+    return results;
+  }
+
+  analyzeSuffix(noun: string, rest: string): WordToken[][] {
+    return this.nounAnalyzer._analyze(noun, rest);
+  }
+}
+
 export function extractNumericLiteral(
-  sentence: string
-): [Token[], string] | null {
+  sentence: string,
+  analyzer: Analyzer
+): [Token[][], string] | null {
   function format(analysis: Analysis): Token {
-    const pos: POS = "체언"; // TODO
+    const pos: POS = "명사";
     const token: NumberToken = {
       type: "number",
       lemma: analysis.consumed,
@@ -207,18 +374,19 @@ export function extractNumericLiteral(
     };
     return token;
   }
-  function mapper(analysis: Analysis): [Token[], string] | null {
+  function mapper(analysis: Analysis): [Token[][], string] | null {
     if (isNaN(analysis.parsed)) return null;
     if (/[.]\s*$/.test(analysis.consumed)) return null;
+    const formatted = format(analysis);
     if (/^([.,\s]|$)/.test(analysis.rest) || /\s$/.test(analysis.consumed)) {
-      return [[format(analysis)], analysis.rest.trim()];
+      return [[[formatted]], analysis.rest.trim()];
     }
     const match = analysis.rest.match(/^([^\s.,"]+)\s*(.*)$/);
     if (!match) return null;
     const [_, suffix, rest] = match;
-    let analyzed = analyzeNounChunk(analysis.consumed, suffix);
-    if (!analyzed) return null;
-    let tokens = [format(analysis), ...analyzed.slice(1)];
+    let analyses = analyzer.analyzeSuffix(analysis.consumed, suffix);
+    if (!analyses.length) return null;
+    let tokens: Token[][] = analyses.map((x) => [formatted, ...x.slice(1)]);
     return [tokens, rest];
   }
   return extractAndProcessNumber(sentence, mapper, [
@@ -228,18 +396,19 @@ export function extractNumericLiteral(
   ]);
 }
 
-export function extractArityDesignator(word: string): Token[] | null {
+export function extractArityDesignator(
+  word: string,
+  analyzer: Analyzer
+): Token[][] | null {
   function validateTokens(tokens: WordToken[]): "arity" | "number" | null {
     for (const token of tokens) {
-      if (token.pos === "접미사") {
-        if (token.lemma !== "분") return "number";
-        return null;
-      }
+      if (token.pos === "접미사")
+        return token.lemma === "제곱" ? "number" : null;
     }
     return "arity";
   }
   function format(analysis: Analysis, type: "arity" | "number"): Token {
-    const pos: POS = "체언"; // TODO
+    const pos: POS = "명사"; // TODO
     const token: Token = {
       type: type,
       lemma: analysis.consumed,
@@ -248,15 +417,20 @@ export function extractArityDesignator(word: string): Token[] | null {
     };
     return token;
   }
-  function mapper(analysis: Analysis): Token[] | null {
+  function mapper(analysis: Analysis): Token[][] | null {
     if (isNaN(analysis.parsed)) return null;
     if (analysis.parsed < 1 || analysis.parsed >= 100) return null;
-    let analyzed = analyzeNounChunk(analysis.consumed, analysis.rest);
-    if (!analyzed) return null;
-    let tokens = analyzed.slice(1);
-    let type = validateTokens(tokens);
-    if (!type) return null;
-    return [format(analysis, type), ...tokens];
+    const analyses = analyzer.analyzeSuffix(analysis.consumed, analysis.rest);
+    if (!analyses.length) return null;
+    const formatted = analyses
+      .map((x) => {
+        let tokens = x.slice(1);
+        let type = validateTokens(tokens);
+        if (!type) return null;
+        return [format(analysis, type), ...tokens];
+      })
+      .filter((x): x is Token[] => x != null);
+    return formatted.length ? formatted : null;
   }
   return extractAndProcessNumber(word.trim(), mapper, ["순우리말"]);
 }

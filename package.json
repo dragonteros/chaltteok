@@ -3,7 +3,7 @@
   "version": "0.1.2",
   "description": "자연스러운 한국어를 꿈꾸는 프로그래밍 언어",
   "scripts": {
-    "build": "microbundle",
+    "build": "node ./preludeLoader.js && microbundle",
     "dev": "microbundle watch --no-compress -f cjs",
     "test": "mocha -r esm"
   },
