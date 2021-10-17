@@ -23,10 +23,26 @@
 어찌/어떠하면 어찌/어떠하고 아니면 어찌/어떠하다:
 {
   needs('1 참거짓', 'n T', 'n T');
-  returns('n T')
+  returns('n T');
   return (condition, truthy, falsy) => f(condition)[0]? f(truthy): f(falsy);
+}
+그대로 [부사]
+무엇을 그대로 두다: {
+  needs('n T');
+  returns('n T');
+  return f;
 }
 
 때 [명사]
 거듭하다 [동사] 거듭하여/거듭해, 거듭하니
 반복하다 [동사] 반복하여/반복해, 반복하니 -> 거듭하다
+어찌/어떠할 때까지 어찌하다:
+어찌/어떠할 때까지 무엇을 거듭하다:
+{
+  needs('1 참거짓', 'n T');
+  returns('');
+  return function (condition, action) {
+    while (!f(condition)[0]) f(action);
+    return [];
+  };
+}

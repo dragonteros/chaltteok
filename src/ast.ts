@@ -9,24 +9,31 @@ export type SimpleTerm = {
 export type GenericTerm = { type: "generic"; pos: POS; name?: string };
 export type Term = SimpleTerm | GenericTerm;
 
+export type TypeAnnotation = string | { listOf: TypeAnnotation };
 export type TermType = {
-  arity: number | "n" | "n+1";
-  type: string;
-  variable: boolean;
+  arity: number | { at_least: number } | "n";
+  type: TypeAnnotation;
+  variable?: boolean;
 };
-
+export type Overloading = {
+  input?: TermType[];
+  output?: TermType;
+  register: [TermType | null, TermType | null]; // [get, set]
+  processor: Processor | string[]; // function body, not yet deciphered
+  argPerm?: (number | null)[]
+};
 export class Tree {
   head: Term;
   children: Tree[];
-  candidates: Term[][];
-  processor = null;
+  overloading: Overloading[];
 
-  constructor(head: Term, children?: Tree[], candidates?: Term[][]) {
+  constructor(head: Term, children: Tree[], overloading: Overloading[]) {
     this.head = head;
-    this.children = children || [];
-    this.candidates = candidates || [];
+    this.children = children;
+    this.overloading = overloading;
   }
 }
+export type AST = { processor: Processor; arguments: AST[] };
 
 export type Scope = { [id: string]: ValuePack };
 export class Env {
@@ -65,5 +72,5 @@ export type ValuePack = Value[];
 
 export type Processor = (
   env: Env,
-  strict: (x: Tree) => ValuePack
-) => (...args: Tree[]) => ValuePack;
+  strict: (x: AST) => ValuePack
+) => (...args: AST[]) => ValuePack;

@@ -6,7 +6,7 @@ import {
   POS,
   ArityToken,
 } from "./analyzer";
-import { Tree, Term } from "./ast";
+import { Tree, Term, Overloading, Processor, AST, TermType } from "./ast";
 import { toAbbr } from "./utils.js";
 
 function _formatTerm(term: Term) {
@@ -17,10 +17,12 @@ function _formatTerm(term: Term) {
 export class Pattern {
   input: Term[];
   output: Term;
+  overloading: Overloading;
   key: string;
-  constructor(input: Term[], output: Term) {
+  constructor(input: Term[], output: Term, overloading: Overloading) {
     this.input = input;
     this.output = output;
+    this.overloading = overloading;
     this.key = input.map(_formatTerm).join(" ");
     output.name = this.key;
   }
@@ -65,13 +67,36 @@ class DefaultArray<T> {
   }
 }
 
+class ListMap<T> {
+  data: { [key: string]: T[] };
+  constructor(data?: { [key: string]: T[] }) {
+    this.data = data || {};
+  }
+  clone(): ListMap<T> {
+    let data: { [key: string]: T[] } = {};
+    for (const key in this.data) data[key] = this.data[key].slice();
+    return new ListMap(data);
+  }
+  get(key: string): T[] {
+    let item = this.data[key];
+    if (item != null) return item;
+    item = this.data[key] = [];
+    return item;
+  }
+  update(other: ListMap<T>) {
+    for (const key in other.data) this.data[key] = other.data[key];
+  }
+  values(): T[][] {
+    return Object.values(this.data).filter((x) => x.length > 0);
+  }
+}
 export class PatternArray {
-  data: DefaultArray<DefaultArray<Pattern[]>>;
-  constructor(data?: DefaultArray<DefaultArray<Pattern[]>>) {
+  data: DefaultArray<DefaultArray<ListMap<Pattern>>>;
+  constructor(data?: DefaultArray<DefaultArray<ListMap<Pattern>>>) {
     if (data != null) this.data = data;
     else {
-      this.data = new DefaultArray<DefaultArray<Pattern[]>>(
-        () => new DefaultArray<Pattern[]>(() => [])
+      this.data = new DefaultArray<DefaultArray<ListMap<Pattern>>>(
+        () => new DefaultArray(() => new ListMap())
       );
     }
   }
@@ -80,6 +105,7 @@ export class PatternArray {
     this.data
       .get(i)
       .get(length - (i + 1))
+      .get(pattern.key)
       .push(pattern);
   }
   sliceBefore(start?: number, end?: number): PatternArray {
@@ -90,7 +116,7 @@ export class PatternArray {
   }
   clone(): PatternArray {
     const data = this.data.map((row) =>
-      row.map((patterns) => patterns.slice())
+      row.map((patterns) => patterns.clone())
     );
     return new PatternArray(data);
   }
@@ -104,16 +130,15 @@ export class PatternArray {
       let trgRow = result.data.get(i);
       for (let j = 0; j < srcRow.length; j++) {
         if (!srcRow.hasValueAt(j)) continue;
-        trgRow.get(j).push(...srcRow.get(j));
+        trgRow.get(j).update(srcRow.get(j));
       }
     }
     return result;
   }
-  enumerate(): [number, number, Pattern][] {
+  enumerate(): [number, number, Pattern[]][] {
     let list = this.data.enumerate().flatMap(function ([i, row]) {
-      return row.enumerate().flatMap(function ([j, patterns]) {
-        // TODO: Sort patterns by specificity
-        return patterns.map((x): [number, number, Pattern] => [i, j, x]);
+      return row.enumerate().flatMap(function ([j, _map]) {
+        return _map.values().map((x): [number, number, Pattern[]] => [i, j, x]);
       });
     });
     list.reverse();
@@ -145,102 +170,146 @@ function _allCombinations<T>(cases: T[][]): T[][] {
   return combinations;
 }
 
+function _swapped<T>(arr: T[], i: number, j: number): T[] {
+  let _arr = arr.slice();
+  _arr[i] = arr[j];
+  _arr[j] = arr[i];
+  return _arr;
+}
 function _swapArguments(pattern: Pattern): Pattern[] {
-  let argIndexes = pattern.input
-    .slice(0, -1)
+  function _sameTerms(a: Term, b: Term): boolean {
+    if (a.type === "generic" || b.type === "generic") return false;
+    if (a.pos !== b.pos) return false;
+    return (a.token as WordToken).lemma === (b.token as WordToken).lemma;
+  }
+
+  const genericIdx = pattern.input
     .map((term, i) => (term.type === "generic" ? i : null))
-    .filter((i): i is number => {
-      if (i == null) return false;
+    .filter((i): i is number => i != null);
+  const swapIdx = genericIdx
+    .map((_, j) => j)
+    .filter((j) => {
+      const i = genericIdx[j];
+      if (i + 1 >= pattern.input.length) return false;
       const suffix = pattern.input[i + 1];
-      if (suffix.type === "generic") return false;
+      if (suffix.type !== "simple") return false;
       if (suffix.pos !== "조사") return false;
       if (suffix.token.type !== "word") return false;
       if (["이다"].includes(suffix.token.lemma)) return false;
       return true;
     });
-
   let patterns: Pattern[] = [pattern];
+  if (swapIdx.length !== 2) return patterns;
+  if (_sameTerms(pattern.input[swapIdx[0] + 1], pattern.input[swapIdx[1] + 1]))
+    return patterns;
+  if (pattern.overloading.input == null)
+    throw new ParseError("패턴에 인수 타입을 명시해야 합니다.");
+
   const pos = pattern.output.pos;
-  if (argIndexes.length >= 3) throw "Hey look at this!";
-  if (argIndexes.length <= 1) return patterns;
+  const range = genericIdx.map((_, i) => i);
 
-  let newTerms = pattern.input.slice();
-  newTerms[argIndexes[0] + 1] = pattern.input[argIndexes[1] + 1];
-  newTerms[argIndexes[1] + 1] = pattern.input[argIndexes[0] + 1];
-  patterns.push(new Pattern(newTerms, { type: "generic", pos }));
+  const terms = _swapped(
+    pattern.input,
+    genericIdx[swapIdx[0]] + 1,
+    genericIdx[swapIdx[1]] + 1
+  );
+  const overloading: Overloading = {
+    input: _swapped(pattern.overloading.input, swapIdx[0], swapIdx[1]),
+    register: pattern.overloading.register,
+    output: pattern.overloading.output,
+    processor: pattern.overloading.processor,
+    argPerm: _swapped(range, swapIdx[0], swapIdx[1]),
+  };
+  patterns.push(new Pattern(terms, { type: "generic", pos }, overloading));
+  if (pattern.overloading.register[0] != null) return patterns;
 
-  newTerms = pattern.input.slice();
-  newTerms.splice(argIndexes[0], 2);
-  patterns.push(new Pattern(newTerms, { type: "generic", pos }));
-
-  newTerms = pattern.input.slice();
-  newTerms.splice(argIndexes[1], 2);
-  patterns.push(new Pattern(newTerms, { type: "generic", pos }));
-
+  for (const k of [0, 1]) {
+    const input = pattern.overloading.input.slice();
+    const terms = pattern.input.slice();
+    terms.splice(genericIdx[swapIdx[k]], 2);
+    const argPerm: (number | null)[] = range.slice(0, -1);
+    argPerm.splice(swapIdx[k], 0, null);
+    const overloading: Overloading = {
+      input,
+      register: pattern.overloading.register,
+      output: pattern.overloading.output,
+      processor: pattern.overloading.processor,
+      argPerm,
+    };
+    patterns.push(new Pattern(terms, { type: "generic", pos }, overloading));
+  }
   return patterns;
 }
 
-export function parsePattern(pattern: Token[], pos?: POS): Pattern[] {
-  let tokens: (WordToken | NumberToken | ArityToken)[] = [];
-  for (let i = 0; i < pattern.length; i++) {
-    const token = pattern[i];
+export function parsePattern(
+  tokens: Token[],
+  overloading: Overloading,
+  pos?: POS
+): Pattern[] {
+  let _tokens: (WordToken | NumberToken | ArityToken)[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
     if (token.type === "id" || token.type === "symbol")
       throw new ParseError(
         "Internal Error parsePattern::ILLEGAL_TOKEN " + JSON.stringify(token)
       );
-    tokens.push(token);
+    _tokens.push(token);
   }
 
   let terms: Term[][] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (equalWord(tokens[i], 다)) continue;
-    if (equalWord(tokens[i], 의)) {
-      let _terms = terms[terms.length - 1];
-      if (
-        _terms.length === 1 &&
-        _terms[0].type === "generic" &&
-        _terms[0].pos === "명사"
-      ) {
-        _terms[0].pos = "관형사";
+  let termTypes: (TermType | null)[] = [];
+  for (let i = 0; i < _tokens.length; i++) {
+    const token = _tokens[i];
+    if (equalWord(_tokens[i], 다)) continue;
+    if (equalWord(_tokens[i], 의)) {
+      let _term = terms[terms.length - 1][0];
+      if (_term.type === "generic" && _term.pos === "명사") {
+        _term.pos = "관형사";
         continue;
       }
     }
 
-    if (equalWord(tokens[i], 몇))
-      // TODO: 두 수의 차
+    const next = i + 1 < _tokens.length ? _tokens[i + 1] : null;
+    let arity = null;
+    if (token.type === "arity") arity = token.number;
+    if (equalWord(token, 어느)) arity = 1;
+    if (equalWord(token, 여러)) arity = { at_least: 2 };
+
+    if (equalWord(token, 몇)) {
       terms.push([{ type: "generic", pos: "명사" }]);
-    else if (equalWord(tokens[i], 무엇))
+      termTypes.push({ arity: 1, type: "수" });
+    } else if (equalWord(token, 무엇)) {
       terms.push([{ type: "generic", pos: "명사" }]);
-    else if (equalWord(tokens[i], 어찌하다))
+      termTypes.push(null);
+    } else if (equalWord(token, 어찌하다)) {
       terms.push([{ type: "generic", pos: "동사" }]);
-    else if (equalWord(tokens[i], 어떠하다))
+      termTypes.push(null);
+    } else if (equalWord(token, 어떠하다)) {
       terms.push([{ type: "generic", pos: "형용사" }]);
-    else if (equalWord(tokens[i], 어찌어떠하다))
+      termTypes.push({ arity: 1, type: "참거짓" });
+    } else if (equalWord(token, 어찌어떠하다)) {
       terms.push([
         { type: "generic", pos: "형용사" },
         { type: "generic", pos: "동사" },
       ]);
-    else if (
-      i < tokens.length - 1 &&
-      tokens[i + 1].pos === "명사" &&
-      (tokens[i].type === "arity" ||
-        equalWord(tokens[i], 어느) ||
-        equalWord(tokens[i], 여러))
-    ) {
+      termTypes.push(null);
+    } else if (arity != null && next?.pos === "명사") {
       terms.push([{ type: "generic", pos: "명사" }]);
+      termTypes.push({ arity, type: next.lemma });
       i++;
-    } else terms.push([{ type: "simple", token, pos: token.pos }]);
+    } else {
+      terms.push([{ type: "simple", token, pos: token.pos }]);
+    }
   }
 
+  if (termTypes.every((x): x is TermType => x != null))
+    overloading.input = termTypes;
+
   return _allCombinations(terms)
-    .map(
-      (x) =>
-        new Pattern(x, {
-          type: "generic",
-          pos: pos || x[x.length - 1].pos,
-        })
-    )
+    .map(function (terms) {
+      const _pos = pos || terms[terms.length - 1].pos;
+      return new Pattern(terms, { type: "generic", pos: _pos }, overloading);
+    })
     .flatMap(_swapArguments);
 }
 
@@ -249,12 +318,6 @@ export function equalWord(word1: Token, word2: WordToken): boolean {
   return word1.lemma === word2.lemma && word1.pos === word2.pos;
 }
 
-/* 
-무엇과 무엇: {
-  needs('n T', '1 T');
-  returns('n+1 T');
-  return (acc, cur) => acc.concat(cur);
-}*/
 const 과: WordToken = { type: "word", lemma: "과", pos: "조사" };
 
 function _is과(term: Term) {
@@ -343,7 +406,14 @@ export function matchPattern(
     const [bgn, end, children] = _m;
     if (children.length > 1) {
       const name = children.map((_) => "{}n").join(" 과p ");
-      const output = new Tree({ type: "generic", pos: "명사", name }, children);
+      const head: Term = { type: "generic", pos: "명사", name };
+      const overloading: Overloading = {
+        input: children.map((_) => ({ arity: 1, type: "T" })),
+        output: { arity: children.length, type: "T" },
+        register: [null, null],
+        processor: (_, f) => f,
+      };
+      const output = new Tree(head, children, [overloading]);
       results.push([bgn + (i - maxBefore), end + (i - maxBefore), output]);
     }
   }
@@ -356,21 +426,23 @@ export function matchPattern(
     candidates = candidates.concat(entries);
   }
 
-  for (const [precededBy, followedBy, pattern] of candidates.enumerate()) {
+  for (const [precededBy, followedBy, patterns] of candidates.enumerate()) {
     const [bgn, end] = [i - precededBy, i + 1 + followedBy];
     const target = trees.slice(bgn, end) as Tree[];
     let matched = true;
     let children: Tree[] = [];
+    const input = patterns[0].input;
     for (let i = 0; i < target.length; i++) {
-      if (!_matches(target[i], pattern.input[i])) {
+      if (!_matches(target[i], input[i])) {
         matched = false;
         break;
       }
-      if (pattern.input[i].type === "generic") children.push(target[i]);
+      if (input[i].type === "generic") children.push(target[i]);
     }
     if (matched) {
-      results.push([bgn, end, new Tree(pattern.output, children)]);
-      break; // candidates?? multiple??
+      const output = patterns[0].output;
+      const overloading = patterns.map((p) => p.overloading);
+      results.push([bgn, end, new Tree(output, children, overloading)]);
     }
   }
 

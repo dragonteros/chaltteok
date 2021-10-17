@@ -71,7 +71,7 @@ function parseSentence(tokens: Token[], patterns: IndexedPatterns): Tree {
       if (token.symbol === ",") return ",";
       throw new ParseError("Internal Error parseSentence::ILLEGAL_SYMBOL");
     }
-    return new Tree({ type: "simple", token, pos: token.pos });
+    return new Tree({ type: "simple", token, pos: token.pos }, [], []);
   });
 
   stack = _stackOperation(stack, patterns);

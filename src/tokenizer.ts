@@ -24,7 +24,11 @@ function _makeSet(items: Token[][]) {
   return result;
 }
 
-const FORBIDDEN = [/v -지e (아니하|않)다a/, /a -지e (아니하|않)다v/];
+const FORBIDDEN = [
+  /v -지e (?:아니하|않)다a/,
+  /a -지e (?:아니하|않)다v/,
+  /(?:^|d)\s*나누다v -\(으\)ㅁe/,
+];
 const isForbidden = (x: string) => FORBIDDEN.some((p) => p.test(x));
 
 function tagPOS(past: string, chunk: string, analyzer: Analyzer): Token[] {
@@ -49,10 +53,7 @@ function tagPOS(past: string, chunk: string, analyzer: Analyzer): Token[] {
   return results[0];
 }
 
-function tokenize(
-  sentence: string,
-  analyzer: Analyzer,
-): Token[] {
+function tokenize(sentence: string, analyzer: Analyzer): Token[] {
   let result: Token[] = [];
   let past: string = "";
   function push(...args: Token[]) {

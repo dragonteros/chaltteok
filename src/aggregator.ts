@@ -7,9 +7,9 @@ import {
   indexPatterns,
   parsePattern,
 } from "./pattern";
-import { BUILTIN_PATTERNS } from "./builtin";
+import { BUILTIN_PATTERNS, _parseTermType } from "./builtin";
 import { tokenize } from "./tokenizer";
-import { Term } from "./ast";
+import { Overloading, Processor, TermType, ValuePack } from "./ast";
 
 type VocabEntry = { lemma: string; pos: POS; extra: string };
 type Definition = { patterns: string[]; body: string[] };
@@ -65,8 +65,26 @@ function splitBlocks(x: string): [string, string][] {
   return results;
 }
 
+function _mergeBlocks(blocks: [string, string][]): [string, string][] {
+  if (blocks.length === 0) return [];
+  let result: [string, string][] = [];
+  let cur: [string, string] = blocks[0];
+  for (const [mode, block] of blocks.slice(1)) {
+    if (cur[0] === mode) {
+      cur[1] += block;
+    } else {
+      result.push(cur);
+      cur = [mode, block];
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
 function splitProgram(program: string): string[] {
-  let blocks = splitBlocks(program).filter(([mode, _]) => mode !== "()");
+  let blocks = _mergeBlocks(
+    splitBlocks(program).filter(([mode, _]) => mode !== "()")
+  );
   let channel: string[] = [];
   function push(...args: string[]) {
     for (const arg of args) {
@@ -325,32 +343,49 @@ export class Substituter {
   }
 }
 
-function _getPOS(body: string): POS | undefined {
-  function dummy() {}
+function parseJS(body: string): [Overloading, POS | undefined] {
+  let input: TermType[] | undefined = undefined;
+  let output: TermType | undefined = undefined;
+  let register: [TermType | null, TermType | null] = [null, null];
   let pos: POS | undefined = undefined;
-  try {
-    new Function("needs", "returns", "f", body)(
-      dummy,
-      function (_: string, _pos?: POS) {
-        pos = _pos;
-      },
-      dummy
-    );
-  } catch (e) {
-    throw e + body;
-  }
-  return pos;
-}
+  let _proc: ((...args: ValuePack[]) => ValuePack) | undefined = undefined;
+  new Function("f", "needs", "returns", "register", body)(
+    function (g: (...args: ValuePack[]) => ValuePack) {
+      _proc = g;
+    },
+    function (..._types: string[]) {
+      input = _types.map(_parseTermType);
+    },
+    function (_type: string, _pos?: POS) {
+      output = _parseTermType(_type);
+      pos = _pos;
+    },
+    function (get?: string, set?: string) {
+      register[0] = get != null ? _parseTermType(get) : null;
+      register[1] = set != null ? _parseTermType(set) : null;
+    }
+  );
+  if (output == null)
+    throw new ParseError("자바스크립트 블럭은 반환 타입을 명시해야 합니다.");
 
-// type Definition = { patterns: string[]; body: string[] };
-// type _Program = {
-//   definitions: Definition[];
-//   main: string[];
-// };
+  const dummy = () => {};
+  let processor: Processor;
+  if (_proc != null) {
+    const g: (...args: ValuePack[]) => ValuePack = _proc;
+    processor = function (_, f) {
+      return (...args) => g(...args.map(f));
+    };
+  } else {
+    const fn = new Function("env", "f", "needs", "returns", "register", body);
+    processor = (env, strict) => fn(env, strict, dummy, dummy, dummy);
+  }
+  const overloading: Overloading = { input, output, register, processor };
+  return [overloading, pos];
+}
 
 export function parseProgram(
   sources: string[]
-): [Analyzer, Substituter, IndexedPatterns] {
+): [Analyzer, Substituter, IndexedPatterns, string[]] {
   const program = _parseProgram(sources.join("\n\n"));
 
   let analyzer = new Analyzer();
@@ -369,16 +404,21 @@ export function parseProgram(
 
   let patterns: Pattern[] = BUILTIN_PATTERNS.slice();
   for (const definition of program.definitions) {
+    let overloading: Overloading;
     let pos: POS | undefined = undefined;
-    if (definition.body[0] === "{JS}") pos = _getPOS(definition.body[1]);
+    if (definition.body[0] === "{JS}") {
+      [overloading, pos] = parseJS(definition.body[1]);
+    } else {
+      overloading = { processor: definition.body, register: [null, null] };
+    }
 
     for (const _pattern of definition.patterns) {
       let tokens = tokenize(_pattern, analyzer);
       tokens = substituter.run(tokens);
-      patterns.push(...parsePattern(tokens, pos));
+      patterns.push(...parsePattern(tokens, overloading, pos));
     }
   }
 
   const indexed = indexPatterns(patterns);
-  return [analyzer, substituter, indexed];
+  return [analyzer, substituter, indexed, program.main];
 }

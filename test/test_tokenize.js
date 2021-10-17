@@ -3,9 +3,14 @@ import assert from "assert";
 import { tokenize, PRELUDE, parseProgram } from "../dist/chaltteok.js";
 import { toAbbr } from "../src/utils.js";
 
-const analyzer = parseProgram([PRELUDE])[0];
+let analyzer = null;
+function _load() {
+  if (analyzer != null) return;
+  analyzer = parseProgram([PRELUDE])[0];
+}
 
 function assertTokenized(original, chunks, extra = undefined) {
+  _load();
   try {
     ((extra && extra.nouns) || []).forEach((x) => analyzer.add(x, "명사"));
     ((extra && extra.adjs) || []).forEach((x) => analyzer.addAdj(x));

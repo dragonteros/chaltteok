@@ -28,31 +28,18 @@
   })
 }
 
-(
-  나눔 [명사]: {
-    function 나눔(dividend, divisor) {
-      const remainder = dividend % divisor;
-      this.값 = dividend / divisor;
-      this.몫 = (dividend - remainder) / divisor;
-      this.나머지: remainder;
-    }
-    env.setFunction('나눔', 나눔);
-  }
-)
-무엇의 값: {
-  needs('1 나눔');
+나눔 [명사]: 수의 일종.
+어느 나눔의 값: {
   returns('1 수');
   return f(([division]) => [division.값]);
 }
 몫 [명사]
-무엇의 몫: {
-  needs('1 나눔');
+어느 나눔의 몫: {
   returns('1 수');
   return f(([division]) => [division.몫]);
 }
 나머지 [명사]
-무엇의 나머지: {
-  needs('1 나눔');
+어느 나눔의 나머지: {
   returns('1 수');
   return f(([division]) => [division.나머지]);
 }
@@ -60,9 +47,11 @@
 나누다 [동사] 나누어/나눠, 나누니
 얼마를 얼마로 나누다: {
   returns('1 나눔');
-  return f(([dividend], [divisor]) => {
-    const 나눔 = env.getFunction('나눔');
-    return [new 나눔(dividend, divisor)];
+  return f(([나뉘는수], [나누는수]) => {
+    const 나머지 = 나뉘는수 % 나누는수;
+    const 값 = 나뉘는수 / 나누는수;
+    const 몫 = (나뉘는수 - 나머지) / 나머지;
+    return [{ 값, 몫, 나머지 }];
   });
 }
 
@@ -91,7 +80,17 @@
   })
 }
 
+반올림 [명사]
+얼마의 반올림:
+  해당 수와 그 버림의 차가 해당 수와 그 올림의 차보다 작으면 해당 수의 버림
+  아니면 해당 수의 올림.
+
 배 [명사] -> 곱절
+
+버림 [명사]
+얼마의 버림:
+  해당 수를 1로 나눈 몫을 '정수부'라고 할 때,
+  해당 수가 정수가 아닌 음수이면 '정수부'보다 하나 작은 수, 아니면 '정수부'.
 
 -분 [접미사]
 얼마분의 얼마: {
@@ -101,7 +100,7 @@
 
 빼다 [동사] 빼어/빼, 빼니
 얼마에서 얼마를 빼다: {
-  needs('1 수');
+  needs('1 수', '1 수');
   returns('1 수');
   return f(([x], [y]) => [x - y]);
 }
@@ -114,6 +113,11 @@
     return [name];
   })
 }
+
+올림 [명사]
+얼마의 올림:
+  해당 수를 1로 나눈 몫을 '정수부'라고 할 때,
+  해당 수가 정수가 아닌 양수이면 '정수부'보다 하나 큰 수, 아니면 '정수부'.
 
 -제곱 [접미사]
 얼마의 몇제곱: {

@@ -9,10 +9,10 @@ import {
 let patterns = null;
 let substituter = null;
 
-function _loadPrelude() {
+function _load() {
   if (patterns != null) return;
   let _;
-  [_, substituter, patterns] = parseProgram([PRELUDE]);
+  [_, substituter, patterns, _] = parseProgram([PRELUDE]);
 }
 
 function prettyForest(nodes, level = 0) {
@@ -27,7 +27,7 @@ function prettyForest(nodes, level = 0) {
 }
 
 function assertForest(original, expected) {
-  _loadPrelude();
+  _load();
   let tokens = original.split(" ").map(fromAbbr);
   tokens = substituter.run(tokens)
   const forest = constructForest(tokens, patterns);
@@ -253,7 +253,7 @@ describe("구문 분석", function () {
 
   it("쉼표", function () {
     assertForest(
-      "0n 과p 1n 과p 2n 의p 곱n 과p , 3n 과p 4n 과p 5n 의p 곱n 의p 합n .",
+      "0n 과p 1n 과p 2n 의p 곱n 과p , 3n 과p 4n 과p 5n 의p 곱n 의p , 합n .",
       `
 {}d 합n
   {}n 의p
