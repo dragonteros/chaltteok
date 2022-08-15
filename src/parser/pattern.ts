@@ -1,21 +1,21 @@
+import { SyntaxError } from "../errors";
 import {
   ArityToken,
   NumberToken,
   POS,
-  SyntaxError,
   Token,
   WordToken,
 } from "../lexer/tokens";
+import { Protocol } from "../runner/procedure";
+import { Signature } from "../typechecker/signature";
 import {
-  Protocol,
-  Signature,
   TypeAnnotation,
   TypePack,
   VariableAnnotation,
-} from "../runner/values";
-import { mergeParamTypes } from "../typechecker/typechecker";
+} from "../typechecker/types";
 import { DefaultArray, ListMap, toAbbr } from "../utils/utils.js";
 import { Term, Tree } from "./ast";
+import { mergeParamTypes } from "./typemerger";
 
 function _formatTerm(term: Term) {
   if ("token" in term) return toAbbr(term.token);

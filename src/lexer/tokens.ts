@@ -1,13 +1,3 @@
-import { josa } from "josa";
-
-export class SyntaxError extends Error {
-  constructor(message: string) {
-    super(josa(message));
-  }
-}
-export class RuntimeError extends SyntaxError {}
-export class TypeError extends RuntimeError {}
-
 export type POS =
   | "명사"
   | "대명사"

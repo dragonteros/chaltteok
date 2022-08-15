@@ -3,10 +3,10 @@ import assert from "assert";
 import { run } from "../src/index";
 
 function assertInterpret(
-  original: string,
-  expected: string,
-  stdin = "",
-  stdout = ""
+  original,
+  expected
+  // , stdin = ""
+  // , stdout = ""
 ) {
   try {
     assert.deepStrictEqual(run(original), expected);

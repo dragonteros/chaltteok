@@ -1,15 +1,9 @@
 import { Analyzer as YongeonAnalyzer, Eomi, Yongeon } from "eomi-js";
 import { getJosaPicker } from "josa";
 import { Analysis, extractAndProcessNumber } from "kor-to-number";
+import { SyntaxError } from "../errors";
 import { Trie } from "../utils/trie";
-import {
-  IDToken,
-  NumberToken,
-  POS,
-  SyntaxError,
-  Token,
-  WordToken,
-} from "./tokens";
+import { IDToken, NumberToken, POS, Token, WordToken } from "./tokens";
 
 /**
  * 호환용 한글 자모 중 자음을 한글 자모 중 종성으로 변환합니다.

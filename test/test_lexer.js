@@ -1,19 +1,36 @@
 import assert from "assert";
+import { josa } from "josa";
 
 import { tokenize } from "../src/lexer/tokenizer";
-import { Context, Prelude } from "../src/runner/module";
+import { Prelude } from "../src/runner/module";
 import { toAbbr } from "../src/utils/utils";
 
-let ctx: Context | null = null;
+let ctx = null;
 
-type Extra = { nouns?: string[] };
-function assertTokenized(original: string, chunks: string, extra?: Extra) {
-  if (ctx == null) ctx = (Prelude as any).context;
+// type Extra = { nouns?: string[] };
+function assertTokenized(original, chunks, extra) {
+  if (ctx == null) ctx = Prelude.context;
+  for (const vocab of extra?.nouns || []) {
+    try {
+      ctx?.analyzer.add(vocab, "명사");
+    } catch (err) {
+      console.error(
+        josa(
+          `"${original}"#{을} 토큰화하기 전 어휘 "${vocab}"#{을} 추가하는 중 ` +
+            "다음 오류가 발생했습니다:"
+        )
+      );
+      throw err;
+    }
+  }
+
   try {
-    ((extra && extra.nouns) || []).forEach((x) => ctx?.analyzer.add(x, "명사"));
-  } catch (e) {}
-  const tokenized = tokenize(original, (ctx as any).analyzer);
-  assert.strictEqual(tokenized.map(toAbbr).join(" "), chunks);
+    const tokenized = tokenize(original, ctx.analyzer);
+    assert.strictEqual(tokenized.map(toAbbr).join(" "), chunks);
+  } catch (err) {
+    console.error(`"${original}"을 토큰화하는 중 다음 오류가 발생했습니다:`);
+    throw err;
+  }
 }
 
 describe("품사 분석", function () {
@@ -91,8 +108,7 @@ describe("품사 분석", function () {
     it("종합", function () {
       assertTokenized(
         "두 수의 차가 , '법'이 되는 수의 배수임",
-        "두n 수n 의p 차n 가p , 법n 가p 되다v -는e 수n 의p 배수n 이다p -(으)ㅁe",
-        { nouns: ["배수"] }
+        "두n 수n 의p 차n 가p , 법n 가p 되다v -는e 수n 의p 배수n 이다p -(으)ㅁe"
       );
       assertTokenized(
         "나누어 나머지가 0이 되다",
@@ -104,8 +120,7 @@ describe("품사 분석", function () {
       );
       assertTokenized(
         "여러 수에 대해 공히 배수인 수",
-        "여러d 수n 에p 대하다v -(아/어)e 공히 배수n 이다p -(으)ㄴe 수n",
-        { nouns: ["배수"] }
+        "여러d 수n 에p 대하다v -(아/어)e 공히 배수n 이다p -(으)ㄴe 수n"
       );
       assertTokenized(
         "어느 정수를 나누어떨어지게 하는 수",

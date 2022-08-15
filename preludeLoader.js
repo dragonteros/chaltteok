@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { resolve } from "path";
 
-const dir = "./src/prelude/";
+const dir = "./src/builtin/";
 const data = readdirSync(dir)
   .filter((filename) => filename.endsWith(".chaltteok"))
   .map((filename) => {
@@ -18,6 +18,6 @@ const data = readdirSync(dir)
   .replace(/  +/g, " ");
 
 writeFileSync(
-  "./src/prelude/prelude.ts",
+  "./src/builtin/prelude.ts",
   "export const PRELUDE: string = " + JSON.stringify(data) + ";"
 );

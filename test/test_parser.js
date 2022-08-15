@@ -1,15 +1,15 @@
 import assert from "assert";
 import { parse } from "../src/parser/parser";
-import { Context, Prelude } from "../src/runner/module";
+import { Prelude } from "../src/runner/module";
 import { fromAbbr } from "../src/utils/utils";
 
-let ctx: Context | null = null;
+let ctx = null;
 
-function assertForest(original: string, expected: string) {
-  if (ctx == null) ctx = (Prelude as any).context;
+function assertForest(original, expected) {
+  if (ctx == null) ctx = Prelude.context;
   let tokens = original.split(" ").map(fromAbbr);
-  tokens = (ctx as any).substituter.run(tokens);
-  const forest = parse(tokens, (ctx as any).patterns);
+  tokens = ctx.substituter.run(tokens);
+  const forest = parse(tokens, ctx.patterns);
   const formatted = forest.map((x) => x.debug()).join("");
   assert.deepStrictEqual(formatted.slice(0, -1), expected.slice(1));
 }
@@ -256,7 +256,7 @@ describe("구문 분석", function () {
     );
   });
 
-  it("생략 인수 중첩 방지", function () {
+  it("생략 중첩 금지", function () {
     assertForest(
       "3n 를p 제곱하다v -(아/어)e 2n 를p 더하다v -(으)ㄴe 것n 를p 곱하다v -다e .",
       `

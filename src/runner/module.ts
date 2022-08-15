@@ -1,7 +1,9 @@
-import { BUILTIN_PATTERNS } from "../builtin";
+import { BUILTIN_PATTERNS } from "../builtin/builtin";
+import { PRELUDE } from "../builtin/prelude";
+import { RuntimeError, SyntaxError } from "../errors";
 import { Analyzer } from "../lexer/analyzer";
 import { tokenize } from "../lexer/tokenizer";
-import { RuntimeError, SyntaxError, Token } from "../lexer/tokens";
+import { Token } from "../lexer/tokens";
 import {
   addVocab,
   Definition,
@@ -19,28 +21,20 @@ import {
   parsePattern,
   Pattern,
 } from "../parser/pattern";
-import { PRELUDE } from "../prelude/prelude";
-import {
-  getType,
-  isMoreSpecificSignature,
-  matchesSignature,
-} from "../typechecker/typechecker";
+import { isMoreSpecificSignature } from "../typechecker/resolver";
+import { matchesSignature, Signature } from "../typechecker/signature";
+import { getType, TypePack, VariableAnnotation } from "../typechecker/types";
 import { ListMap, overloaded, zip } from "../utils/utils";
+import { Env } from "./env";
+import { Impl, Procedure, Protocol } from "./procedure";
 import {
-  Env,
   getConcreteValues,
-  Impl,
   NewBox,
-  Procedure,
-  Protocol,
   RefBox,
-  Signature,
   StrictValuePack,
   Thunk,
-  TypePack,
   Value,
   ValuePack,
-  VariableAnnotation,
 } from "./values";
 
 function allEqual<T>(collection: T[]): boolean {

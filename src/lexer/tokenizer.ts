@@ -1,11 +1,12 @@
 import { getJosaPicker } from "josa";
+import { SyntaxError } from "../errors";
 import { toAbbr } from "../utils/utils";
 import {
   Analyzer,
   extractArityDesignator,
   extractNumericLiteral,
 } from "./analyzer";
-import { SyntaxError, Token } from "./tokens";
+import { Token } from "./tokens";
 
 const 을 = getJosaPicker("을");
 

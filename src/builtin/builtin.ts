@@ -1,17 +1,12 @@
-import { POS, SyntaxError } from "./lexer/tokens";
-import { ArgumentTerm, GenericTerm, SimpleTerm } from "./parser/ast";
-import { Pattern } from "./parser/pattern";
-import {
-  assertStrict,
-  getConcreteValues,
-  Processor,
-  Signature,
-  Type,
-  TypeAnnotation,
-  TypePack,
-  Value,
-} from "./runner/values";
-import { fromAbbr, zip } from "./utils/utils.js";
+import { SyntaxError } from "../errors";
+import { POS } from "../lexer/tokens";
+import { ArgumentTerm, GenericTerm, SimpleTerm } from "../parser/ast";
+import { Pattern } from "../parser/pattern";
+import { Processor } from "../runner/procedure";
+import { assertStrict, getConcreteValues, Value } from "../runner/values";
+import { Signature } from "../typechecker/signature";
+import { Type, TypeAnnotation, TypePack } from "../typechecker/types";
+import { fromAbbr, zip } from "../utils/utils.js";
 
 export function equal(x: Value, y: Value): boolean {
   if (typeof x === "boolean" && typeof y === "boolean") return x === y;

@@ -1,15 +1,15 @@
 import { Eomi, Yongeon } from "eomi-js";
-import { parseTypeAnnotation } from "../builtin";
+import { parseTypeAnnotation } from "../builtin/builtin";
+import { SyntaxError } from "../errors";
 import { Analyzer, makeJosa } from "../lexer/analyzer";
-import { POS, SyntaxError, Token } from "../lexer/tokens";
+import { POS, Token } from "../lexer/tokens";
+import { CompiledImpl, Processor } from "../runner/procedure";
+import { Signature } from "../typechecker/signature";
 import {
-  CompiledImpl,
-  Processor,
-  Signature,
   TypeAnnotation,
   TypePack,
   VariableAnnotation,
-} from "../runner/values";
+} from "../typechecker/types";
 
 export type VocabEntry = { lemma: string; pos: POS; extra: string };
 export type Definition = { patterns: string[]; body: string[] };

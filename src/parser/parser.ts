@@ -1,4 +1,5 @@
-import { SyntaxError, Token } from "../lexer/tokens";
+import { SyntaxError } from "../errors";
+import { Token } from "../lexer/tokens";
 import { splitArray, toAbbr } from "../utils/utils";
 import { Term, Tree } from "./ast";
 import { IndexedPatterns, matchPattern } from "./pattern";
