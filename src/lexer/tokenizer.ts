@@ -3,8 +3,8 @@ import { SyntaxError } from "../errors";
 import { toAbbr } from "../utils/utils";
 import {
   Analyzer,
-  extractArityDesignator,
-  extractNumericLiteral,
+  extractNativeNumeralLiteral,
+  extractSinoNumericLiteral,
 } from "./analyzer";
 import { Token } from "./tokens";
 
@@ -35,7 +35,7 @@ function tagPOS(past: string, chunk: string, analyzer: Analyzer): Token[] {
   if (".,".includes(chunk)) results.push([{ type: "symbol", symbol: chunk }]);
   results.push(...analyzer.analyze(chunk));
 
-  const _result = extractArityDesignator(chunk, analyzer);
+  const _result = extractNativeNumeralLiteral(chunk, analyzer);
   if (_result != null) results.push(..._result);
 
   results = _makeSet(results).filter(
@@ -64,7 +64,7 @@ function tokenize(sentence: string, analyzer: Analyzer): Token[] {
     .replace(/\s+/g, " ")
     .replace(/\(.*?\)/g, "");
   while (sentence.length > 0) {
-    const _result = extractNumericLiteral(sentence, analyzer);
+    const _result = extractSinoNumericLiteral(sentence, analyzer);
     if (_result != null) {
       const analyses = _result[0];
       if (analyses.length !== 1)

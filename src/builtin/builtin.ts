@@ -38,12 +38,10 @@ const _BUILTIN_PATTERN: Record<string, Processor | null> = {
   "앞n 의p 것n -> {인수0}n": null,
   "앞n 의p 수n -> {인수0}n": null,
   "앞n 의p 정수n -> {인수0}n": null,
-  "전자n -> {인수0}n": null,
 
   "뒤n 의p 것n -> {인수1}n": null,
   "뒤n 의p 수n -> {인수1}n": null,
   "뒤n 의p 정수n -> {인수1}n": null,
-  "후자n -> {인수1}n": null,
 
   "{any}v -(으)ㄴ다/-는다e -> {}v": id,
   "{any}v -다e -> {}v": id,

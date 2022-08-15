@@ -363,7 +363,7 @@ export class Analyzer {
 const DENY_LIST = [
   /자\s*$/, // `삼자`를 "삼다v -자e"로 해석하기 위함.
 ];
-export function extractNumericLiteral(
+export function extractSinoNumericLiteral(
   sentence: string,
   analyzer: Analyzer
 ): [Token[][], string] | null {
@@ -372,6 +372,7 @@ export function extractNumericLiteral(
     const token: NumberToken = {
       type: "number",
       lemma: analysis.consumed,
+      native: false,
       number: analysis.parsed,
       pos,
     };
@@ -400,22 +401,16 @@ export function extractNumericLiteral(
   ]);
 }
 
-export function extractArityDesignator(
+export function extractNativeNumeralLiteral(
   word: string,
   analyzer: Analyzer
 ): Token[][] | null {
-  function validateTokens(tokens: WordToken[]): "arity" | "number" | null {
-    for (const token of tokens) {
-      if (token.pos === "접미사")
-        return token.lemma === "제곱" ? "number" : null;
-    }
-    return "arity";
-  }
-  function format(analysis: Analysis, type: "arity" | "number"): Token {
+  function format(analysis: Analysis): Token {
     const pos: POS = "명사"; // TODO
     const token: Token = {
-      type: type,
+      type: "number",
       lemma: analysis.consumed,
+      native: true,
       number: analysis.parsed,
       pos,
     };
@@ -426,15 +421,9 @@ export function extractArityDesignator(
     if (analysis.parsed < 1 || analysis.parsed >= 100) return null;
     const analyses = analyzer.analyzeSuffix(analysis.consumed, analysis.rest);
     if (!analyses.length) return null;
-    const formatted = analyses
-      .map((x) => {
-        const tokens = x.slice(1);
-        const type = validateTokens(tokens);
-        if (!type) return null;
-        return [format(analysis, type), ...tokens];
-      })
-      .filter((x): x is Token[] => x != null);
-    return formatted.length ? formatted : null;
+    const formatted = format(analysis);
+    const tokens = analyses.map((x) => [formatted, ...x.slice(1)]);
+    return tokens.length ? tokens : null;
   }
   return extractAndProcessNumber(word.trim(), mapper, ["순우리말"]);
 }

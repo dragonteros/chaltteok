@@ -1,11 +1,5 @@
 import { SyntaxError } from "../errors";
-import {
-  ArityToken,
-  NumberToken,
-  POS,
-  Token,
-  WordToken,
-} from "../lexer/tokens";
+import { NumberToken, POS, Token, WordToken } from "../lexer/tokens";
 import { Protocol } from "../runner/procedure";
 import { Signature } from "../typechecker/signature";
 import {
@@ -90,7 +84,13 @@ export class PatternArray {
   }
 }
 
-const 두: NumberToken = { type: "number", lemma: "두", pos: "명사", number: 2 };
+const 두: NumberToken = {
+  type: "number",
+  native: true,
+  lemma: "두",
+  pos: "명사",
+  number: 2,
+};
 const 어느: WordToken = { type: "word", lemma: "어느", pos: "관형사" };
 const 여러: WordToken = { type: "word", lemma: "여러", pos: "관형사" };
 const 몇: WordToken = { type: "word", lemma: "몇", pos: "명사" };
@@ -215,7 +215,7 @@ export function parsePattern(
   signature?: Signature,
   pos?: POS
 ): [Pattern[], Signature] {
-  const _tokens: (WordToken | NumberToken | ArityToken)[] = [];
+  const _tokens: (WordToken | NumberToken)[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token.type === "id" || token.type === "symbol")
@@ -233,7 +233,7 @@ export function parsePattern(
 
     const next = i + 1 < _tokens.length ? _tokens[i + 1] : null;
     let arity = null;
-    if (token.type === "arity") arity = token.number;
+    if (token.type === "number" && token.native) arity = token.number;
     if (equalWord(token, 어느)) arity = 1;
     if (equalWord(token, 두)) arity = 2;
     if (equalWord(token, 여러)) arity = { atLeast: 2 };
