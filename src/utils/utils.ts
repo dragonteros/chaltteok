@@ -16,7 +16,7 @@ export function fromAbbr(chunk: string): Token {
   const lemma = chunk.slice(0, -1);
   if (isNaN(+lemma)) return { type: "word", lemma, pos };
   if (pos !== "명사") throw new Error("Internal Error fromAbbr::WRONG_POS");
-  return { type: "number", lemma, pos, number: +lemma };
+  return { type: "number", native: false, lemma, pos, number: +lemma };
 }
 
 export function toAbbr(tag: Token): string {

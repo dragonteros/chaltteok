@@ -22,8 +22,8 @@ import {
   Pattern,
 } from "../parser/pattern";
 import { isMoreSpecificSignature } from "../typechecker/resolver";
-import { matchesSignature, Signature } from "../typechecker/signature";
-import { getType, TypePack, VariableAnnotation } from "../typechecker/types";
+import { getType, matchesSignature, Signature } from "../typechecker/signature";
+import { TypePack, VariableAnnotation } from "../typechecker/types";
 import { ListMap, overloaded, zip } from "../utils/utils";
 import { Env } from "./env";
 import { Impl, Procedure, Protocol } from "./procedure";

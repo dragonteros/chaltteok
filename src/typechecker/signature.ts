@@ -13,6 +13,10 @@ import {
   VariableAnnotation,
 } from "./types";
 
+import { TypeError } from "../errors";
+import { NewBox, RefBox, StrictValuePack, Value } from "../runner/values";
+import { ConcretePack } from "./types";
+
 export type Signature = {
   param: TypeAnnotation[];
   antecedent?: TypePack | VariableAnnotation | "any";
@@ -148,4 +152,39 @@ export function matchesSignature(
   }
 
   return true;
+}
+
+export function getType(values: Value[]): ConcretePack;
+export function getType(values: NewBox): "new";
+export function getType(values: RefBox): { variableOf: ConcretePack };
+export function getType(values: StrictValuePack): ConcreteAnnotation | "new" {
+  const err = new TypeError("Internal Error getType");
+  if (!Array.isArray(values)) {
+    if (values.data == null) return "new";
+    return { variableOf: getType(values.data) };
+  }
+
+  if (values.length === 0) return { arity: 0, type: "수" };
+  if (values.length === 1) {
+    const value = values[0];
+    if (typeof value === "boolean") {
+      return { arity: 1, type: "참거짓" };
+    }
+    switch (value.type) {
+      case "열":
+        const { type } = getType(value.data);
+        return { arity: 1, type: { listOf: type } };
+      default:
+        return { arity: 1, type: value.type };
+    }
+  }
+
+  const types = values.map((x) => getType([x]));
+  if (types.some((x) => x.arity !== 1)) throw err;
+  const typeMap: ConcreteTypeParameterMap = {};
+  for (const t of types) {
+    const _t = t.type;
+    if (!updateTypeMap(typeMap, { T: _t })) throw err;
+  }
+  return { arity: types.length, type: typeMap.T };
 }
