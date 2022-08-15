@@ -1,14 +1,14 @@
-const fs = require("fs");
-const path = require("path");
+import { readdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { resolve } from "path";
 
 const dir = "./src/prelude/";
-const data = fs
-  .readdirSync(dir)
+const data = readdirSync(dir)
+  .filter((filename) => filename.endsWith(".chaltteok"))
   .map((filename) => {
-    const filepath = path.resolve(dir, filename);
-    const isFile = fs.statSync(filepath).isFile();
+    const filepath = resolve(dir, filename);
+    const isFile = statSync(filepath).isFile();
     if (!isFile) return "";
-    return fs.readFileSync(filepath, { encoding: "utf-8" });
+    return readFileSync(filepath, { encoding: "utf-8" });
   })
   .join("\n\n")
   .split("\n")
@@ -17,7 +17,7 @@ const data = fs
   .replace(/\n\n+/g, "\n\n")
   .replace(/  +/g, " ");
 
-fs.writeFileSync(
-  "./src/prelude.ts",
+writeFileSync(
+  "./src/prelude/prelude.ts",
   "export const PRELUDE: string = " + JSON.stringify(data) + ";"
 );

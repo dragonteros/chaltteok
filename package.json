@@ -5,7 +5,7 @@
   "scripts": {
     "build": "node ./preludeLoader.js && microbundle",
     "dev": "microbundle watch --no-compress -f cjs",
-    "test": "mocha -r esm"
+    "test": "mocha test/**/*.{js,ts}"
   },
   "repository": {
     "type": "git",
@@ -18,17 +18,26 @@
   },
   "homepage": "https://github.com/dragonteros/chaltteok#readme",
   "dependencies": {
-    "eomi-js": "^0.2.1",
+    "eomi-js": "^0.2.3",
     "josa": "^3.0.1",
-    "kor-to-number": "^1.1.4"
+    "kor-to-number": "^1.1.5"
   },
   "devDependencies": {
+    "@types/mocha": "^9.1.1",
     "@types/node": "^16.7.1",
-    "esm": "^3.2.25",
+    "@typescript-eslint/eslint-plugin": "^5.28.0",
+    "@typescript-eslint/parser": "^5.28.0",
+    "eslint": "^8.17.0",
+    "eslint-config-prettier": "^8.5.0",
+    "eslint-plugin-prettier": "^4.0.0",
     "microbundle": "^0.14.0",
-    "mocha": "^9.1.0",
+    "mocha": "^10.0.0",
+    "prettier": "^2.7.1",
+    "source-map-support": "^0.5.21",
+    "ts-node": "^10.7.0",
     "typescript": "^4.3.5"
   },
+  "type": "module",
   "source": "./src/index.ts",
   "exports": "./dist/chaltteok.modern.js",
   "main": "./dist/chaltteok.js",

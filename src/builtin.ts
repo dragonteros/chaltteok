@@ -1,110 +1,116 @@
-import { ParseError, POS } from "./analyzer";
+import { POS, SyntaxError } from "./lexer/tokens";
+import { ArgumentTerm, GenericTerm, SimpleTerm } from "./parser/ast";
+import { Pattern } from "./parser/pattern";
 import {
-  Term,
+  assertStrict,
+  getConcreteValues,
   Processor,
-  ValuePack,
-  Value,
-  TermType,
-  Overloading,
+  Signature,
+  Type,
   TypeAnnotation,
-  AST,
-} from "./ast";
-import { Pattern } from "./pattern";
-import { fromAbbr } from "./utils.js";
+  TypePack,
+  Value,
+} from "./runner/values";
+import { fromAbbr, zip } from "./utils/utils.js";
 
 export function equal(x: Value, y: Value): boolean {
-  return x === y; // TODO
+  if (typeof x === "boolean" && typeof y === "boolean") return x === y;
+  if (typeof x !== "object" || typeof y !== "object") return false;
+
+  if (x.type === "열" && y.type === "열") {
+    if (x.data.length !== y.data.length) return false;
+    return zip(x.data, y.data).every(([a, b]) => equal(a, b));
+  }
+  if ("값" in x && "값" in y) return x.값 === y.값;
+  return false;
 }
 
-const pure = function (g: (...args: ValuePack[]) => ValuePack): Processor {
-  return (_, f) =>
-    (...args: AST[]) =>
-      g(...args.map(f));
+const pure = function (g: (...args: Value[][]) => Value[]): Processor {
+  return (env) => () => g(...env.args.map(assertStrict).map(getConcreteValues));
 };
-const id: Processor = (_, f) => f;
-const logicalAnd: Processor = pure(([a], [b]) => [a && b]);
+const id: Processor = (env) => () => env.args[0];
 
-type PatternMap = { [x: string]: Processor };
-const _BUILTIN_PATTERN: PatternMap = {
-  "{1 T}n 가p {1 T}n 이다p -> {1 참거짓}a": pure(([a], [b]) => [equal(a, b)]),
-  "{1 T}n 가p {1 T}n 과p 같다v -> {1 참거짓}a": pure(([a], [b]) => [
-    equal(a, b),
-  ]),
-  "{2+ T}n 가p 모두 같다v -> {1 참거짓}a": pure((...args) => [
+const _BUILTIN_PATTERN: Record<string, Processor | null> = {
+  "{1 T}n 가p {1 T}n 이다p -> {}a": pure(([a], [b]) => [equal(a, b)]),
+  "{1 T}n 가p {1 T}n 과p 같다a -> {}a": pure(([a], [b]) => [equal(a, b)]),
+  "{2+ T}n 가p 모두 같다a -> {}a": pure((...args) => [
     args.slice(1).every((x) => equal(x[0], args[0][0])),
   ]),
 
-  "{1 수}d 값n -> {1 수}n": id,
+  "해당d 수n -> {인수0}n": null,
+  "해당d 정수n -> {인수0}n": null,
 
-  // "앞n 의p 것n -> {???}n": id,
-  // "앞n 의p {1 타입}n -> {???}n": id,
-  // "뒤n 의p 것n -> {???}n": id,
-  // "뒤n 의p {1 타입}n -> {???}n": id,
+  "앞n 의p 것n -> {인수0}n": null,
+  "앞n 의p 수n -> {인수0}n": null,
+  "앞n 의p 정수n -> {인수0}n": null,
+  "전자n -> {인수0}n": null,
 
-  "{n T}d 것n -> {n T}n": id,
-  "{n T}n 의p -> {n T}d": id,
+  "뒤n 의p 것n -> {인수1}n": null,
+  "뒤n 의p 수n -> {인수1}n": null,
+  "뒤n 의p 정수n -> {인수1}n": null,
+  "후자n -> {인수1}n": null,
 
-  "{n T}v -(으)ㄴ다/-는다e -> {n T}v": id,
-  "{n T}v -(으)ㅁe -> {n T}n": id,
-  "{n T}a -(으)ㅁe -> {n T}n": id,
-  "{n T}v -기e -> {n T}n": id,
-  "{n T}a -기e -> {n T}n": id,
-  "{n T}v -다e -> {n T}v": id,
-  "{n T}a -다e -> {n T}a": id,
-  "{n T}v -자e -> {n T}v": id,
-
-  "{1 참거짓} {1 참거짓}a -> {1 참거짓}a": logicalAnd,
-  "{1 참거짓} {1 참거짓}v -> {1 참거짓}v": logicalAnd,
-  "{} {n T}v -> {n T}v": pure((_, arg) => arg),
+  "{any}v -(으)ㄴ다/-는다e -> {}v": id,
+  "{any}v -다e -> {}v": id,
+  "{any}a -다e -> {}a": id,
+  "{any}v -자e -> {}v": id,
 };
-export function _parseTermType(chunk: string): TermType {
+
+export function parseTypeAnnotation(chunk: string): TypeAnnotation {
   chunk = chunk.trim();
   if (chunk === "") return { arity: 0, type: "" };
+  if (chunk === "new" || chunk === "any" || chunk === "lazy") return chunk;
+
   const match = chunk.match(/^(\S+) (\S+)( 변수)?$/);
   if (match == null)
-    throw new ParseError("Internal Error _parseTermType::ILLEGAL_FORMAT");
-  const [_, _arity, _type, variable] = match;
-  const at_least = parseInt(_arity);
+    throw new SyntaxError("Internal Error _parseTermType::ILLEGAL_FORMAT");
+  const [, _arity, _type, _variable] = match;
+  const atLeast = parseInt(_arity);
   const arity =
-    _arity === "n" ? "n" : _arity.slice(-1) === "+" ? { at_least } : at_least;
-  const type = (function f(t: string): TypeAnnotation {
+    _arity === "n" ? "n" : _arity.slice(-1) === "+" ? { atLeast } : atLeast;
+  const type = (function f(t: string): Type {
     return t.slice(-2) === "[]" ? { listOf: f(t.slice(0, -2)) } : t;
   })(_type);
-  return { arity, type, variable: variable != null };
-}
-function _parseTerm(chunk: string): [Term, TermType | null] {
-  const _token = fromAbbr(chunk.trim());
-  if (_token.type === "symbol")
-    throw new ParseError("Internal Error _parseTerm::ILLEGAL_FORMAT");
-  const lemma = _token.lemma;
-  const pos: POS = _token.pos;
-  if (lemma[0] !== "{")
-    return [{ type: "simple", token: { type: "word", lemma, pos }, pos }, null];
-  return [{ type: "generic", pos }, _parseTermType(lemma.slice(1, -1))];
+  const annotation: TypePack = { arity, type };
+  if (_variable) return { variableOf: annotation };
+  return annotation;
 }
 
-function _parsePattern(pattern: string, processor: Processor): Pattern {
+function _parseTerm(
+  chunk: string
+): [SimpleTerm | ArgumentTerm, null] | [GenericTerm, TypeAnnotation] {
+  const _token = fromAbbr(chunk.trim());
+  if (_token.type === "symbol")
+    throw new SyntaxError("Internal Error _parseTerm::ILLEGAL_FORMAT");
+  const lemma = _token.lemma;
+  const pos: POS = _token.pos;
+  if (lemma[0] !== "{") {
+    return [{ pos, token: { type: "word", lemma, pos } }, null];
+  }
+  if (lemma.slice(0, 3) === "{인수") {
+    const index = Number(lemma.slice(3, -1));
+    return [{ pos, index }, null];
+  }
+  return [{ pos }, parseTypeAnnotation(lemma.slice(1, -1))];
+}
+
+function _parsePattern(pattern: string): [Pattern, Signature] {
   const [input, output] = pattern.split("->", 2);
   const terms = input.match(/\{[^{}]*?\}\w?|[^{}\s]+/g);
   if (!terms)
-    throw new ParseError("Internal Error _parsePattern::ILLEGAL_FORMAT");
+    throw new SyntaxError("Internal Error _parsePattern::ILLEGAL_FORMAT");
   const inputs = terms.map(_parseTerm);
   const inputTerms = inputs.map((x) => x[0]);
-  const inputTypes = inputs
+  const param = inputs
     .map((x) => x[1])
-    .filter((x): x is TermType => x != null);
-  const [outputTerm, outputType] = _parseTerm(output.trim());
-  if (outputType == null)
-    throw new ParseError("Internal Error _parsePattern::OUTPUT_TERM_NO_TYPE");
-  const overloading: Overloading = {
-    input: inputTypes,
-    output: outputType,
-    register: [null, null],
-    processor,
-  };
-  return new Pattern(inputTerms, outputTerm, overloading);
+    .filter((x): x is TypeAnnotation => x != null);
+  const [outputTerm] = _parseTerm(output.trim());
+  return [new Pattern(inputTerms, outputTerm), { param }];
 }
 
 export const BUILTIN_PATTERNS = Object.entries(_BUILTIN_PATTERN).map(
-  ([pattern, proc]) => _parsePattern(pattern, proc)
+  ([pattern, proc]): [Pattern, Signature, Processor | null] => [
+    ..._parsePattern(pattern),
+    proc,
+  ]
 );

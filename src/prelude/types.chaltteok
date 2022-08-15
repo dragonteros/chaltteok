@@ -1,0 +1,15 @@
+수 [명사]
+실수 [명사] -> 수
+
+정수 [명사]
+어찌한 정수: {
+  needs("1 수");
+  return function ([num]) {
+    if (!Number.isInteger(num.값)) {
+      throw new Error(`${num.값}을 정수로 변환할 수 없습니다.`)
+    }
+    return {type: "정수", 값: num.값};
+  };
+}
+
+참거짓 [명사]

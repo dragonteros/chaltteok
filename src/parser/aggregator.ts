@@ -1,22 +1,22 @@
-import { Yongeon, Eomi } from "eomi-js";
-
-import { Analyzer, ParseError, makeJosa, POS, Token } from "./analyzer";
+import { Eomi, Yongeon } from "eomi-js";
+import { parseTypeAnnotation } from "../builtin";
+import { Analyzer, makeJosa } from "../lexer/analyzer";
+import { POS, SyntaxError, Token } from "../lexer/tokens";
 import {
-  IndexedPatterns,
-  Pattern,
-  indexPatterns,
-  parsePattern,
-} from "./pattern";
-import { BUILTIN_PATTERNS, _parseTermType } from "./builtin";
-import { tokenize } from "./tokenizer";
-import { Overloading, Processor, TermType, ValuePack } from "./ast";
+  CompiledImpl,
+  Processor,
+  Signature,
+  TypeAnnotation,
+  TypePack,
+  VariableAnnotation,
+} from "../runner/values";
 
-type VocabEntry = { lemma: string; pos: POS; extra: string };
-type Definition = { patterns: string[]; body: string[] };
-type _Program = {
+export type VocabEntry = { lemma: string; pos: POS; extra: string };
+export type Definition = { patterns: string[]; body: string[] };
+export type Program = {
   vocab: VocabEntry[];
   definitions: Definition[];
-  main: string[];
+  main: string;
 };
 
 const POS_MARK_PATTERN =
@@ -27,7 +27,7 @@ function splitBlocks(x: string): [string, string][] {
 
   const START = '"({';
   const END = '")}';
-  let results: [string, string][] = [];
+  const results: [string, string][] = [];
   let lastIdx = 0;
   let start = "";
   let end = "";
@@ -37,7 +37,7 @@ function splitBlocks(x: string): [string, string][] {
     let isDelimiter = false;
 
     if (depth === 0) {
-      let mode = START.indexOf(x[i]);
+      const mode = START.indexOf(x[i]);
       if (mode !== -1) {
         isDelimiter = true;
         depth = 1;
@@ -67,7 +67,7 @@ function splitBlocks(x: string): [string, string][] {
 
 function _mergeBlocks(blocks: [string, string][]): [string, string][] {
   if (blocks.length === 0) return [];
-  let result: [string, string][] = [];
+  const result: [string, string][] = [];
   let cur: [string, string] = blocks[0];
   for (const [mode, block] of blocks.slice(1)) {
     if (cur[0] === mode) {
@@ -82,10 +82,10 @@ function _mergeBlocks(blocks: [string, string][]): [string, string][] {
 }
 
 function splitProgram(program: string): string[] {
-  let blocks = _mergeBlocks(
-    splitBlocks(program).filter(([mode, _]) => mode !== "()")
+  const blocks = _mergeBlocks(
+    splitBlocks(program).filter(([mode, ,]) => mode !== "()")
   );
-  let channel: string[] = [];
+  const channel: string[] = [];
   function push(...args: string[]) {
     for (const arg of args) {
       if (!arg || !arg.trim()) continue;
@@ -105,7 +105,7 @@ function splitProgram(program: string): string[] {
     }
 
     const lines = block.split("\n");
-    for (let line of lines) {
+    for (const line of lines) {
       if (line.trim() === "") {
         push("{END}");
         continue;
@@ -114,11 +114,11 @@ function splitProgram(program: string): string[] {
       const colonIdx = line.indexOf(":");
       const def = colonIdx !== -1 ? line.slice(0, colonIdx) : line;
       if (def.trim() === "")
-        throw new ParseError("구문 정의 형식이 올바르지 않습니다: " + line);
+        throw new SyntaxError("구문 정의 형식이 올바르지 않습니다: " + line);
       const vocabMatch = def.split(POS_MARK_PATTERN, 3);
 
       if (colonIdx === -1 && vocabMatch.length <= 1) {
-        push(...line.split(/(\.)/));
+        push(...line.split(/(\.)/), " ");
         continue;
       }
 
@@ -126,26 +126,26 @@ function splitProgram(program: string): string[] {
       else {
         const [lemma, pos, extra] = vocabMatch;
         if (lemma.trim() === "")
-          throw new ParseError("단어 정의 형식이 올바르지 않습니다: " + line);
+          throw new SyntaxError("단어 정의 형식이 올바르지 않습니다: " + line);
         push("{WORD}", lemma, pos, extra, "{END}");
       }
 
       if (colonIdx !== -1)
-        push("{BODY}", ...line.slice(colonIdx + 1).split(/(\.)/));
+        push("{BODY}", ...line.slice(colonIdx + 1).split(/(\.)/), " ");
     }
   }
   push("{END}");
   return channel;
 }
 
-function _parseProgram(program: string): _Program {
-  let vocab: VocabEntry[] = [];
-  let definitions: Definition[] = [];
-  let main: string[] = [];
+export function parseProgram(program: string): Program {
+  const vocab: VocabEntry[] = [];
+  const definitions: Definition[] = [];
+  const main: string[] = [];
 
   let patterns: string[] = [];
   const packets = splitProgram(program);
-  let state: string = "END";
+  let state = "END";
   for (let i = 0; i < packets.length; i++) {
     const packet = packets[i];
     if (!packet) continue;
@@ -169,6 +169,7 @@ function _parseProgram(program: string): _Program {
         state = "MAIN";
         break;
       case "MAIN-.->":
+        main[main.length - 1] += packet;
         state = ".";
         break;
 
@@ -232,7 +233,7 @@ function _parseProgram(program: string): _Program {
         break;
       }
       case "BODY-{JS}->": {
-        let body = [];
+        const body = [];
         body.push(packets[i++]);
         body.push(packets[i++]);
         const def: Definition = { patterns, body };
@@ -242,12 +243,14 @@ function _parseProgram(program: string): _Program {
       }
 
       case "BODY GO-*->": {
-        let body = definitions[definitions.length - 1].body;
+        const body = definitions[definitions.length - 1].body;
         body[body.length - 1] += packet;
         state = "BODY GO";
         break;
       }
       case "BODY GO-.->":
+        const body = definitions[definitions.length - 1].body;
+        body[body.length - 1] += packet;
         state = "BODY STOP";
         break;
       case "BODY STOP-*->":
@@ -265,7 +268,7 @@ function _parseProgram(program: string): _Program {
         break;
 
       default:
-        throw new ParseError(
+        throw new SyntaxError(
           "Internal Error parseProgram::ILLEGAL_STATE_PACKET: " +
             state +
             ", " +
@@ -273,17 +276,20 @@ function _parseProgram(program: string): _Program {
         );
     }
   }
-  return { vocab, definitions, main };
+  return { vocab, definitions, main: main.join("") };
 }
 
-function addVocab(analyzer: Analyzer, vocab: VocabEntry): string | null {
+export function addVocab(
+  analyzer: Analyzer,
+  vocab: VocabEntry
+): string | undefined {
   let lemma = vocab.lemma.trim();
   if (lemma.slice(0, 1) === "-") lemma = lemma.slice(1);
   const pos = vocab.pos;
-  let [extra, synonym] = vocab.extra.split("->", 2);
+  const [extra, synonym] = vocab.extra.split("->", 2);
 
   if (pos === "형용사" || pos === "동사") {
-    let variants = [];
+    const variants = [];
     if (!extra.trim()) variants.push(new Yongeon(lemma));
     else {
       const [hae, hani] = extra.split(",", 2);
@@ -295,7 +301,7 @@ function addVocab(analyzer: Analyzer, vocab: VocabEntry): string | null {
     else variants.forEach((x) => analyzer.addVerb(x));
   } else if (pos === "어미") {
     const all = extra.trim() === "";
-    let attachTo = [];
+    const attachTo = [];
     if (all || extra.includes("동사")) attachTo.push("동사");
     if (all || extra.includes("형용사")) attachTo.push("형용사");
     if (all || extra.includes("있다")) attachTo.push("있다");
@@ -308,12 +314,11 @@ function addVocab(analyzer: Analyzer, vocab: VocabEntry): string | null {
       .split("/", 2);
     analyzer.addEomi(new Eomi(a, b), attachTo);
   } else if (pos === "조사") {
-    let [a, b] = lemma.split("/", 2);
+    const [a, b] = lemma.split("/", 2);
     const word = makeJosa(a, b);
     analyzer.addJosa(word);
   } else analyzer.add(lemma, pos);
-
-  return synonym ? synonym.trim() : null;
+  return synonym?.trim();
 }
 
 export class Substituter {
@@ -343,82 +348,51 @@ export class Substituter {
   }
 }
 
-function parseJS(body: string): [Overloading, POS | undefined] {
-  let input: TermType[] | undefined = undefined;
-  let output: TermType | undefined = undefined;
-  let register: [TermType | null, TermType | null] = [null, null];
+export function parseJS(
+  body: string
+): [CompiledImpl, Signature | undefined, POS | undefined] {
   let pos: POS | undefined = undefined;
-  let _proc: ((...args: ValuePack[]) => ValuePack) | undefined = undefined;
-  new Function("f", "needs", "returns", "register", body)(
-    function (g: (...args: ValuePack[]) => ValuePack) {
-      _proc = g;
-    },
-    function (..._types: string[]) {
-      input = _types.map(_parseTermType);
-    },
-    function (_type: string, _pos?: POS) {
-      output = _parseTermType(_type);
+  let param: TypeAnnotation[] | undefined = undefined;
+  let antecedent: TypePack | VariableAnnotation | "any" | undefined = undefined;
+
+  new Function("pos", "needs", "needsAntecedent", body)(
+    function (_pos?: POS) {
       pos = _pos;
     },
-    function (get?: string, set?: string) {
-      register[0] = get != null ? _parseTermType(get) : null;
-      register[1] = set != null ? _parseTermType(set) : null;
+    function (..._types: string[]) {
+      param = _types.map(parseTypeAnnotation);
+    },
+    function (_antecedent: string) {
+      const _type = parseTypeAnnotation(_antecedent);
+      if (_type === "new" || _type === "lazy") {
+        throw new SyntaxError(
+          `선행사 타입 주석으로 ${_type}를 쓸 수 없습니다.`
+        );
+      }
+      antecedent = _type;
     }
   );
-  if (output == null)
-    throw new ParseError("자바스크립트 블럭은 반환 타입을 명시해야 합니다.");
 
-  const dummy = () => {};
-  let processor: Processor;
-  if (_proc != null) {
-    const g: (...args: ValuePack[]) => ValuePack = _proc;
-    processor = function (_, f) {
-      return (...args) => g(...args.map(f));
-    };
-  } else {
-    const fn = new Function("env", "f", "needs", "returns", "register", body);
-    processor = (env, strict) => fn(env, strict, dummy, dummy, dummy);
-  }
-  const overloading: Overloading = { input, output, register, processor };
-  return [overloading, pos];
-}
+  let signature: Signature | undefined = undefined;
+  if (param != null) signature = { param, antecedent };
 
-export function parseProgram(
-  sources: string[]
-): [Analyzer, Substituter, IndexedPatterns, string[]] {
-  const program = _parseProgram(sources.join("\n\n"));
+  const dummy = () => {
+    // do nothing
+  };
+  const fn = new Function(
+    "env",
+    "pos",
+    "needs",
+    "needsAntecedent",
+    "antecedent",
+    body
+  );
+  const processor: Processor = (env) => (antecedent) =>
+    fn(env, dummy, dummy, dummy, () => antecedent)(...env.args);
+  const impl: CompiledImpl = {
+    type: "compiled",
+    body: processor,
+  };
 
-  let analyzer = new Analyzer();
-  let _synonyms: [VocabEntry, string][] = [];
-  for (const entry of program.vocab) {
-    let synonym = addVocab(analyzer, entry);
-    if (synonym != null) _synonyms.push([entry, synonym]);
-  }
-
-  let substituter: Substituter = new Substituter();
-  for (const [entry, synonym] of _synonyms) {
-    const src: Token = { type: "word", lemma: entry.lemma, pos: entry.pos };
-    const trg = tokenize(synonym, analyzer);
-    substituter.add(src, trg);
-  }
-
-  let patterns: Pattern[] = BUILTIN_PATTERNS.slice();
-  for (const definition of program.definitions) {
-    let overloading: Overloading;
-    let pos: POS | undefined = undefined;
-    if (definition.body[0] === "{JS}") {
-      [overloading, pos] = parseJS(definition.body[1]);
-    } else {
-      overloading = { processor: definition.body, register: [null, null] };
-    }
-
-    for (const _pattern of definition.patterns) {
-      let tokens = tokenize(_pattern, analyzer);
-      tokens = substituter.run(tokens);
-      patterns.push(...parsePattern(tokens, overloading, pos));
-    }
-  }
-
-  const indexed = indexPatterns(patterns);
-  return [analyzer, substituter, indexed, program.main];
+  return [impl, signature, pos];
 }

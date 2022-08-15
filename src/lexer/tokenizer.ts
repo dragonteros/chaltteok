@@ -1,21 +1,19 @@
 import { getJosaPicker } from "josa";
-
+import { toAbbr } from "../utils/utils";
 import {
-  ParseError,
   Analyzer,
-  Token,
-  extractNumericLiteral,
   extractArityDesignator,
+  extractNumericLiteral,
 } from "./analyzer";
-import { toAbbr } from "./utils";
+import { SyntaxError, Token } from "./tokens";
 
 const 을 = getJosaPicker("을");
 
 function _makeSet(items: Token[][]) {
-  let result = [];
-  let keys: string[] = [];
+  const result = [];
+  const keys: string[] = [];
   for (const item of items) {
-    let key = JSON.stringify(item);
+    const key = JSON.stringify(item);
     if (!keys.includes(key)) {
       result.push(item);
       keys.push(key);
@@ -45,17 +43,17 @@ function tagPOS(past: string, chunk: string, analyzer: Analyzer): Token[] {
   );
 
   if (results.length > 1)
-    throw new ParseError("어절 '" + chunk + "'의 해석이 모호합니다.");
+    throw new SyntaxError("어절 '" + chunk + "'의 해석이 모호합니다.");
   if (results.length === 0)
-    throw new ParseError(
+    throw new SyntaxError(
       "어절 '" + chunk + "'" + 을(chunk) + " 해석할 수 없습니다."
     );
   return results[0];
 }
 
 function tokenize(sentence: string, analyzer: Analyzer): Token[] {
-  let result: Token[] = [];
-  let past: string = "";
+  const result: Token[] = [];
+  let past = "";
   function push(...args: Token[]) {
     result.push(...args);
     past = [past].concat(args.map(toAbbr)).join(" ");
@@ -65,11 +63,11 @@ function tokenize(sentence: string, analyzer: Analyzer): Token[] {
     .replace(/\s+/g, " ")
     .replace(/\(.*?\)/g, "");
   while (sentence.length > 0) {
-    let _result = extractNumericLiteral(sentence, analyzer);
+    const _result = extractNumericLiteral(sentence, analyzer);
     if (_result != null) {
       const analyses = _result[0];
       if (analyses.length !== 1)
-        throw new ParseError("구문 '" + sentence + "'의 해석이 모호합니다.");
+        throw new SyntaxError("구문 '" + sentence + "'의 해석이 모호합니다.");
       push(..._result[0][0]);
       sentence = _result[1];
       continue;

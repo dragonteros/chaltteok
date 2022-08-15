@@ -1,16 +1,31 @@
 type TrieNode<T> = { value?: T; children?: Map<string, TrieNode<T>> };
 
+function _cloneNode<T>(node: TrieNode<T>): TrieNode<T> {
+  if (!node.children) return { value: node.value };
+  const children = new Map<string, TrieNode<T>>();
+  for (const [key, value] of node.children.entries()) {
+    children.set(key, _cloneNode(value));
+  }
+  return { value: node.value, children };
+}
+
 export class Trie<T> {
   root: TrieNode<T>;
   constructor() {
     this.root = {};
   }
 
+  clone(): Trie<T> {
+    const other = new Trie<T>();
+    other.root = _cloneNode(this.root);
+    return other;
+  }
+
   get(key: string): T | undefined {
     let node = this.root;
-    for (let k of key) {
+    for (const k of key) {
       if (!node.children) return;
-      let child = node.children.get(k);
+      const child = node.children.get(k);
       if (!child) return;
       node = child;
     }
@@ -19,7 +34,7 @@ export class Trie<T> {
 
   set(key: string, value: T): void {
     let node = this.root;
-    for (let k of key) {
+    for (const k of key) {
       if (!node.children) node.children = new Map();
       let child = node.children.get(k);
       if (child == null) {
@@ -38,11 +53,11 @@ export class Trie<T> {
    * @returns A list of pairs of values and the suffix remaining after the prefix.
    */
   allPrefixes(key: string): [T, string][] {
-    let results: [T, string][] = [];
+    const results: [T, string][] = [];
     let node = this.root;
     for (let i = 0; i < key.length; i++) {
       if (!node.children) break;
-      let child = node.children.get(key[i]);
+      const child = node.children.get(key[i]);
       if (!child) break;
       if (child.value != null) results.push([child.value, key.slice(i + 1)]);
       node = child;

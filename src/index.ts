@@ -1,8 +1,15 @@
-export { PRELUDE } from "./prelude";
-export { Analyzer, Token } from "./analyzer";
-export { tokenize } from "./tokenizer";
-export { Tree } from "./ast";
-export { parsePattern, indexPatterns } from "./pattern";
-export { constructForest } from "./parser";
-export { parseProgram } from "./aggregator";
-export { run } from "./interpreter";
+import { parseProgram } from "./parser/aggregator";
+import { formatValuePack } from "./runner/formatter";
+import { Module, Prelude } from "./runner/module";
+
+export function run(source: string): string {
+  const program = parseProgram(source);
+  const module = new Module(
+    [Prelude],
+    program.vocab,
+    program.definitions,
+    program.main
+  );
+  const values = module.runMain();
+  return formatValuePack(values);
+}

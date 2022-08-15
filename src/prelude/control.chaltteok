@@ -1,36 +1,32 @@
-되다 [동사] 되어/돼, 되니
+무엇이 무엇이 되다:
+  앞의 것이 뒤의 것과 같게 되다.
+
+놓다 [동사] 놓아/놔, 놓으니
 두다 [동사] 두어/둬, 두니
 삼다 [동사] 삼아, 삼으니
 하다 [동사] 하여/해, 하니
-
+무엇이 어느 변수가 되다:
+무엇을 어느 변수로 놓다:
 무엇을 어느 변수로 두다:
 무엇을 어느 변수로 삼다:
-무엇이 어느 변수가 되다:
-무엇이 어느 변수로 되다:
 무엇을 어느 변수로 하다:
 무엇을 어느 변수라고 하다:
 {
-  needs('1 T', '1 T 변수');
-  returns('1 T 변수');
-  return f(function ([value], [name]) {
-    env.set(name, [value]);
-    return [name];
-  })
+  needs("any", "new");
+  return function (values, box) {
+    // Don't care NewBox or RefBox. Just overwrite.
+    box.data = values;
+    return box;
+  };
 }
 
 -으면 [어미]
 어찌/어떠하면 무엇 아니면 무엇:
-어찌/어떠하면 어찌/어떠하고 아니면 어찌/어떠하다:
+어찌/어떠하면 어찌하고 아니면 어찌하다:
+어찌/어떠하면 어떠하고 아니면 어떠하다:
 {
-  needs('1 참거짓', 'n T', 'n T');
-  returns('n T');
-  return (condition, truthy, falsy) => f(condition)[0]? f(truthy): f(falsy);
-}
-그대로 [부사]
-무엇을 그대로 두다: {
-  needs('n T');
-  returns('n T');
-  return f;
+  needs("1 참거짓", "lazy", "lazy");
+  return ([condition], truthy, falsy) => (condition ? truthy : falsy);
 }
 
 때 [명사]
@@ -39,10 +35,29 @@
 어찌/어떠할 때까지 어찌하다:
 어찌/어떠할 때까지 무엇을 거듭하다:
 {
-  needs('1 참거짓', 'n T');
-  returns('');
+  needs("lazy", "lazy");
   return function (condition, action) {
-    while (!f(condition)[0]) f(action);
-    return [];
+    let ret = [];
+    while (true) {
+      if (condition.strict()[0]) break;
+      ret = action.strict();
+    }
+    return ret;
+  };
+}
+
+동안 [명사]
+어찌/어떠할 동안 어찌하다:
+어떠한 동안 어찌하다:
+어찌하는 동안 어찌하다:
+{
+  needs("lazy", "lazy");
+  return function (condition, action) {
+    let ret = [];
+    while (true) {
+      if (!condition.strict()[0]) break;
+      ret = action.strict();
+    }
+    return ret;
   };
 }

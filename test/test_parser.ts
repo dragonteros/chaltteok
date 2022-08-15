@@ -1,37 +1,17 @@
 import assert from "assert";
-import { fromAbbr, toAbbr } from "../src/utils.js";
-import {
-  constructForest,
-  PRELUDE,
-  parseProgram,
-} from "../dist/chaltteok.js";
+import { parse } from "../src/parser/parser";
+import { Context, Prelude } from "../src/runner/module";
+import { fromAbbr } from "../src/utils/utils";
 
-let patterns = null;
-let substituter = null;
+let ctx: Context | null = null;
 
-function _load() {
-  if (patterns != null) return;
-  let _;
-  [_, substituter, patterns, _] = parseProgram([PRELUDE]);
-}
-
-function prettyForest(nodes, level = 0) {
-  let result = "";
-  for (let node of nodes) {
-    for (let i = 0; i < level; i++) result += " ";
-    if (node.head.type === "generic") result += node.head.name + "\n";
-    else result += toAbbr(node.head.token) + "\n";
-    result += prettyForest(node.children, level + 2);
-  }
-  return result;
-}
-
-function assertForest(original, expected) {
-  _load();
+function assertForest(original: string, expected: string) {
+  if (ctx == null) ctx = (Prelude as any).context;
   let tokens = original.split(" ").map(fromAbbr);
-  tokens = substituter.run(tokens)
-  const forest = constructForest(tokens, patterns);
-  assert.deepStrictEqual(prettyForest(forest).slice(0, -1), expected.slice(1));
+  tokens = (ctx as any).substituter.run(tokens);
+  const forest = parse(tokens, (ctx as any).patterns);
+  const formatted = forest.map((x) => x.debug()).join("");
+  assert.deepStrictEqual(formatted.slice(0, -1), expected.slice(1));
 }
 
 describe("구문 분석", function () {
@@ -85,79 +65,68 @@ describe("구문 분석", function () {
     assertForest(
       "3n 의p 제곱n .",
       `
-{}d {}n 제곱s
-  {}n 의p
-    3n
+{}n 의p {}n 제곱s
+  3n
   두n`
     );
     assertForest(
       "-2n 의p 제곱n .",
       `
-{}d {}n 제곱s
-  {}n 의p
-    -2n
+{}n 의p {}n 제곱s
+  -2n
   두n`
     );
     assertForest(
       "0n 의p 제곱n .",
       `
-{}d {}n 제곱s
-  {}n 의p
-    0n
+{}n 의p {}n 제곱s
+  0n
   두n`
     );
     assertForest(
       "1n 의p 0n 제곱s .",
       `
-{}d {}n 제곱s
-  {}n 의p
-    1n
+{}n 의p {}n 제곱s
+  1n
   0n`
     );
     assertForest(
       "2n 의p 2n 제곱s .",
       `
-{}d {}n 제곱s
-  {}n 의p
-    2n
+{}n 의p {}n 제곱s
+  2n
   2n`
     );
     assertForest(
       "-2n 의p 3n 제곱s .",
       `
-{}d {}n 제곱s
-  {}n 의p
-    -2n
+{}n 의p {}n 제곱s
+  -2n
   3n`
     );
     assertForest(
       "4n 의p 0.5n 제곱s .",
       `
-{}d {}n 제곱s
-  {}n 의p
-    4n
+{}n 의p {}n 제곱s
+  4n
   0.5n`
     );
     assertForest(
       "9n 의p 0.5n 제곱s 의p 3n 제곱s .",
       `
-{}d {}n 제곱s
-  {}n 의p
-    {}d {}n 제곱s
-      {}n 의p
-        9n
-      0.5n
+{}n 의p {}n 제곱s
+  {}n 의p {}n 제곱s
+    9n
+    0.5n
   3n`
     );
     assertForest(
       "-2n 의p 9n 의p 0.5n 제곱s 제곱s .",
       `
-{}d {}n 제곱s
-  {}n 의p
-    -2n
-  {}d {}n 제곱s
-    {}n 의p
-      9n
+{}n 의p {}n 제곱s
+  -2n
+  {}n 의p {}n 제곱s
+    9n
     0.5n`
     );
   });
@@ -174,35 +143,31 @@ describe("구문 분석", function () {
     assertForest(
       "2n 과p 3n 의p 곱n .",
       `
-{}d 곱n
-  {}n 의p
-    {}n 과p {}n
-      2n
-      3n`
+{}n 의p 곱n
+  ~과~
+    2n
+    3n`
     );
     assertForest(
       "2n 과p 3n 의p 곱n 과p 4n 의p 차n .",
       `
-{}d 차n
-  {}n 의p
-    {}n 과p {}n
-      {}d 곱n
-        {}n 의p
-          {}n 과p {}n
-            2n
-            3n
-      4n`
+{}n 의p 차n
+  ~과~
+    {}n 의p 곱n
+      ~과~
+        2n
+        3n
+    4n`
     );
     assertForest(
       "4n 과p 3n 의p 곱n 를p 6n 로p 나누다v -다e .",
       `
 {}v -다e
   {}n 를p {}n 로p 나누다v
-    {}d 곱n
-      {}n 의p
-        {}n 과p {}n
-          4n
-          3n
+    {}n 의p 곱n
+      ~과~
+        4n
+        3n
     6n`
     );
     assertForest(
@@ -210,66 +175,100 @@ describe("구문 분석", function () {
       `
 {}v -다e
   {}n 를p {}n 로p 나누다v
-    {}d 곱n
-      {}n 의p
-        {}n 과p {}n
-          4n
-          3n
-    {}d 합n
-      {}n 의p
-        {}n 과p {}n
-          2n
-          4n`
+    {}n 의p 곱n
+      ~과~
+        4n
+        3n
+    {}n 의p 합n
+      ~과~
+        2n
+        4n`
     );
   });
 
   it("순접", function () {
     assertForest(
-      "1n 를p 2n 과p 더하다v -고e 3n 과p 곱하다v -다e .",
+      "1n 를p 2n 과p 더하다v -(아/어)e 3n 과p 곱하다v -다e .",
       `
 {}v -다e
-  {} {}v
-    {}v -고e
-      {}n 를p {}n 과p 더하다v
-        1n
-        2n
+  {}v -(아/어)e {}v
+    {}n 를p {}n 과p 더하다v
+      1n
+      2n
     {}n 과p 곱하다v
       3n`
     );
     assertForest(
+      "1n 를p 2n 과p 더하다v -(아/어)e 3n 과p 곱하다v -(으)ㄴe 값n .",
+      `
+{}v -(으)ㄴe 값n
+  {}v -(아/어)e {}v
+    {}n 를p {}n 과p 더하다v
+      1n
+      2n
+    {}n 과p 곱하다v
+      3n`
+    );
+    assertForest(
+      "1n 를p 2n 과p 더하다v -고e 3n 과p 곱하다v -다e .",
+      `
+{}n 를p {}n 과p 더하다v
+  1n
+  2n
+-고e
+3n
+과p
+곱하다v
+-다e`
+    );
+    assertForest(
       "1n 를p 2n 과p 더하다v -고e 3n 과p 곱하다v -(으)ㄴe 값n .",
       `
-{}d 값n
-  {}v -(으)ㄴe
-    {} {}v
-      {}v -고e
-        {}n 를p {}n 과p 더하다v
-          1n
-          2n
-      {}n 과p 곱하다v
-        3n`
+{}n 를p {}n 과p 더하다v
+  1n
+  2n
+-고e
+3n
+과p
+곱하다v
+-(으)ㄴe
+값n`
     );
   });
 
   it("쉼표", function () {
+    // TODO: 마지막 조사와 접사와 어미를 제외하고?
     assertForest(
       "0n 과p 1n 과p 2n 의p 곱n 과p , 3n 과p 4n 과p 5n 의p 곱n 의p , 합n .",
       `
-{}d 합n
-  {}n 의p
-    {}n 과p {}n
-      {}d 곱n
-        {}n 의p
-          {}n 과p {}n 과p {}n
-            0n
-            1n
-            2n
-      {}d 곱n
-        {}n 의p
-          {}n 과p {}n 과p {}n
-            3n
-            4n
-            5n`
+{}n 의p 합n
+  ~과~
+    {}n 의p 곱n
+      ~과~
+        0n
+        1n
+        2n
+    {}n 의p 곱n
+      ~과~
+        3n
+        4n
+        5n`
+    );
+  });
+
+  it("생략 인수 중첩 방지", function () {
+    assertForest(
+      "3n 를p 제곱하다v -(아/어)e 2n 를p 더하다v -(으)ㄴe 것n 를p 곱하다v -다e .",
+      `
+{}v -(으)ㄴe 것n
+  {}v -(아/어)e {}v
+    {}n 를p 제곱하다v
+      3n
+    {}n 를p 더하다v
+      2n
+를p
+곱하다v
+-다e`
     );
   });
 });

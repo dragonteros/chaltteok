@@ -1,22 +1,18 @@
 import assert from "assert";
 
-import { tokenize, PRELUDE, parseProgram } from "../dist/chaltteok.js";
-import { toAbbr } from "../src/utils.js";
+import { tokenize } from "../src/lexer/tokenizer";
+import { Context, Prelude } from "../src/runner/module";
+import { toAbbr } from "../src/utils/utils";
 
-let analyzer = null;
-function _load() {
-  if (analyzer != null) return;
-  analyzer = parseProgram([PRELUDE])[0];
-}
+let ctx: Context | null = null;
 
-function assertTokenized(original, chunks, extra = undefined) {
-  _load();
+type Extra = { nouns?: string[] };
+function assertTokenized(original: string, chunks: string, extra?: Extra) {
+  if (ctx == null) ctx = (Prelude as any).context;
   try {
-    ((extra && extra.nouns) || []).forEach((x) => analyzer.add(x, "명사"));
-    ((extra && extra.adjs) || []).forEach((x) => analyzer.addAdj(x));
-    ((extra && extra.verbs) || []).forEach((x) => analyzer.addVerb(x));
+    ((extra && extra.nouns) || []).forEach((x) => ctx?.analyzer.add(x, "명사"));
   } catch (e) {}
-  const tokenized = tokenize(original, analyzer);
+  const tokenized = tokenize(original, (ctx as any).analyzer);
   assert.strictEqual(tokenized.map(toAbbr).join(" "), chunks);
 }
 
@@ -117,7 +113,8 @@ describe("품사 분석", function () {
       );
       assertTokenized(
         "해당 수보다 크지 않은 자연수이다",
-        "해당d 수n 보다p 크다a -지e 않다a -(으)ㄴe 자연수n 이다p -다e"
+        "해당d 수n 보다p 크다a -지e 않다a -(으)ㄴe 자연수n 이다p -다e",
+        { nouns: ["자연수"] }
       );
       assertTokenized(
         "1부터 해당 수까지 모든 정수의 곱",

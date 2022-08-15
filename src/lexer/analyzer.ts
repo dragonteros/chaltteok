@@ -1,49 +1,15 @@
-import { josa, getJosaPicker } from "josa";
-
-import { Yongeon, Analyzer as YongeonAnalyzer, Eomi } from "eomi-js";
-import { extractAndProcessNumber, Analysis } from "kor-to-number";
-
-import { Trie } from "./trie";
-
-export class ParseError extends Error {
-  constructor(message: string) {
-    super(josa(message));
-  }
-}
-
-export type POS =
-  | "명사"
-  | "대명사"
-  | "동사"
-  | "형용사"
-  | "관형사"
-  | "부사"
-  | "조사"
-  | "어미"
-  | "접미사";
-
-export type IDToken = { type: "id"; lemma: string; pos: "명사" };
-export type WordToken = { type: "word"; lemma: string; pos: POS };
-export type SymbolToken = { type: "symbol"; symbol: string };
-export type ArityToken = {
-  type: "arity";
-  lemma: string;
-  number: number;
-  pos: "명사";
-};
-export type NumberToken = {
-  type: "number";
-  lemma: string;
-  number: number;
-  pos: "명사";
-};
-
-export type Token =
-  | IDToken
-  | WordToken
-  | SymbolToken
-  | ArityToken
-  | NumberToken;
+import { Analyzer as YongeonAnalyzer, Eomi, Yongeon } from "eomi-js";
+import { getJosaPicker } from "josa";
+import { Analysis, extractAndProcessNumber } from "kor-to-number";
+import { Trie } from "../utils/trie";
+import {
+  IDToken,
+  NumberToken,
+  POS,
+  SyntaxError,
+  Token,
+  WordToken,
+} from "./tokens";
 
 /**
  * 호환용 한글 자모 중 자음을 한글 자모 중 종성으로 변환합니다.
@@ -81,7 +47,7 @@ const 로: JosaEntry = {
 
 function endsInJongseong(x: string): boolean {
   if (x.length === 0) return false;
-  let codepoint = x.charCodeAt(x.length - 1);
+  const codepoint = x.charCodeAt(x.length - 1);
   if (codepoint < "가".charCodeAt(0)) return false;
   if (codepoint > "힣".charCodeAt(0)) return false;
   return (codepoint - 0xac00) % 28 !== 0;
@@ -92,7 +58,7 @@ export function makeJosa(
 ): JosaEntry {
   const _afterVowel: string = afterVowel || afterConsonant;
   const lemma = afterConsonant < _afterVowel ? afterConsonant : _afterVowel;
-  let forms = [afterConsonant];
+  const forms = [afterConsonant];
   if (afterConsonant !== _afterVowel) forms.push(_afterVowel);
   function realize(n: string): string {
     return endsInJongseong(n) ? afterConsonant : _afterVowel;
@@ -112,7 +78,22 @@ class NounAnalyzer {
     suffixes: string[],
     eomis: Eomi[],
     josas: JosaEntry[]
+  );
+  constructor(other: NounAnalyzer);
+  constructor(
+    nouns: string[] | NounAnalyzer,
+    suffixes: string[] = [],
+    eomis: Eomi[] = [],
+    josas: JosaEntry[] = []
   ) {
+    if (nouns instanceof NounAnalyzer) {
+      this.nouns = nouns.nouns.clone();
+      this.suffixes = nouns.suffixes.slice();
+      this.idaAnalyzer = nouns.idaAnalyzer.clone();
+      this.daAnalyzer = nouns.daAnalyzer.clone();
+      this.josas = nouns.josas.slice();
+      return;
+    }
     this.nouns = new Trie();
     this.suffixes = suffixes;
     for (const noun of nouns) this.addNoun(noun);
@@ -127,6 +108,10 @@ class NounAnalyzer {
     this.josas = [];
     for (const josa of josas) this.addJosa(josa);
     this.addJosa(로);
+    this.addJosa(makeJosa("의/"));
+  }
+  clone(): NounAnalyzer {
+    return new NounAnalyzer(this);
   }
   addNoun(noun: string): void {
     this.nouns.set(N(noun), noun);
@@ -151,13 +136,13 @@ class NounAnalyzer {
     } else {
       candidates = this.nouns.allPrefixes(N(target));
     }
-    let results: (WordToken | IDToken)[][] = [];
+    const results: (WordToken | IDToken)[][] = [];
     for (const [noun, rest] of candidates) {
       const analyses = this._analyze(noun, rest);
       for (const analysis of analyses) {
         if (!quoteMatch) results.push(analysis);
         else {
-          let newAnalysis: (WordToken | IDToken)[] = analysis;
+          const newAnalysis: (WordToken | IDToken)[] = analysis;
           newAnalysis[0].type = "id";
           results.push(newAnalysis);
         }
@@ -168,7 +153,7 @@ class NounAnalyzer {
 
   _analyze(noun: string, rest: string): WordToken[][] {
     const token: WordToken = { type: "word", lemma: noun, pos: "명사" };
-    let results: WordToken[][] = [];
+    const results: WordToken[][] = [];
     for (const [analysis, _rest] of this._analyzeSuffix(rest)) {
       const _analysis = [token].concat(analysis);
       if (!_rest.trim()) {
@@ -187,7 +172,7 @@ class NounAnalyzer {
   _analyzeSuffix(rest: string): [WordToken[], string][] {
     rest = N(rest);
 
-    let results: [WordToken[], string][] = [[[], rest]];
+    const results: [WordToken[], string][] = [[[], rest]];
     if (!rest.length) return results;
 
     for (const suffix of this.suffixes) {
@@ -218,9 +203,9 @@ class NounAnalyzer {
         ? this.idaAnalyzer
         : this.daAnalyzer;
 
-    let results: WordToken[][] = [];
-    let visited: string[] = [];
-    for (const [_, eomi] of analyzer.analyze(rest)) {
+    const results: WordToken[][] = [];
+    const visited: string[] = [];
+    for (const [, eomi] of analyzer.analyze(rest)) {
       let _eomi = eomi.valueOf();
       if (visited.includes(_eomi)) continue;
       else visited.push(_eomi);
@@ -231,7 +216,7 @@ class NounAnalyzer {
       else if (_eomi.length > 5 && _eomi.slice(0, 5) === "-(으)ㅁ")
         [_eomi, josa] = [_eomi.slice(0, 5), _eomi.slice(5)];
 
-      let analysis: WordToken[] = [
+      const analysis: WordToken[] = [
         { type: "word", lemma: "이다", pos: "조사" },
         { type: "word", lemma: _eomi, pos: "어미" },
       ];
@@ -248,6 +233,9 @@ class SimpleAnalyzer {
   constructor(words: string[], pos: POS) {
     this.words = words;
     this.pos = pos;
+  }
+  clone(): SimpleAnalyzer {
+    return new SimpleAnalyzer(this.words, this.pos);
   }
   add(word: string) {
     this.words.push(word);
@@ -270,25 +258,43 @@ export class Analyzer {
   advAnalyzer: SimpleAnalyzer;
   detAnalyzer: SimpleAnalyzer;
 
-  constructor() {
-    this.nounAnalyzer = new NounAnalyzer([], [], [], []);
+  constructor(other?: Analyzer) {
+    if (other != null) {
+      this.nounAnalyzer = other.nounAnalyzer.clone();
+      this.adjAnalyzer = other.adjAnalyzer.clone();
+      this.verbAnalyzer = other.verbAnalyzer.clone();
+      this.anidaAnalyzer = other.anidaAnalyzer.clone();
+      this.issdaAnalyzer = other.issdaAnalyzer.clone();
+      this.bothAnalyzer = other.bothAnalyzer.clone();
+      this.advAnalyzer = other.advAnalyzer.clone();
+      this.detAnalyzer = other.detAnalyzer.clone();
+    } else {
+      this.nounAnalyzer = new NounAnalyzer([], [], [], []);
 
-    const anihada = [new Yongeon("아니하다", "아니하여"), new Yongeon("않다")];
-    const eomis = [new Eomi("ㅁ"), new Eomi("기")];
-    this.adjAnalyzer = new YongeonAnalyzer(anihada, eomis);
-    this.verbAnalyzer = new YongeonAnalyzer(anihada, eomis);
-    this.anidaAnalyzer = new YongeonAnalyzer([new Yongeon("아니다")], eomis);
-    this.issdaAnalyzer = new YongeonAnalyzer(
-      [new Yongeon("있다"), new Yongeon("없다")],
-      eomis
-    );
-    this.bothAnalyzer = new YongeonAnalyzer(
-      [new Yongeon("어찌/어떠하다", "어찌/어떠하여")],
-      eomis
-    );
+      const anihada = [
+        new Yongeon("아니하다", "아니하여"),
+        new Yongeon("않다"),
+      ];
+      const eomis = [new Eomi("ㅁ"), new Eomi("기")];
+      this.adjAnalyzer = new YongeonAnalyzer(anihada, eomis);
+      this.verbAnalyzer = new YongeonAnalyzer(anihada, eomis);
+      this.anidaAnalyzer = new YongeonAnalyzer([new Yongeon("아니다")], eomis);
+      this.issdaAnalyzer = new YongeonAnalyzer(
+        [new Yongeon("있다"), new Yongeon("없다")],
+        eomis
+      );
+      this.bothAnalyzer = new YongeonAnalyzer(
+        [new Yongeon("어찌/어떠하다", "어찌/어떠하여")],
+        eomis
+      );
 
-    this.advAnalyzer = new SimpleAnalyzer([], "부사");
-    this.detAnalyzer = new SimpleAnalyzer([], "관형사");
+      this.advAnalyzer = new SimpleAnalyzer([], "부사");
+      this.detAnalyzer = new SimpleAnalyzer([], "관형사");
+    }
+  }
+
+  clone(): Analyzer {
+    return new Analyzer(this);
   }
 
   add(word: string, pos: POS) {
@@ -307,7 +313,7 @@ export class Analyzer {
         this.advAnalyzer.add(word);
         return;
     }
-    throw new ParseError("Internal Error Analyzer::add::ILLEGAL_POS " + pos);
+    throw new SyntaxError("Internal Error Analyzer::add::ILLEGAL_POS " + pos);
   }
   addAdj(adj: Yongeon) {
     this.adjAnalyzer.addYongeon(adj);
@@ -332,7 +338,7 @@ export class Analyzer {
   }
 
   analyze(chunk: string): Token[][] {
-    let results: Token[][] = [];
+    const results: Token[][] = [];
     results.push(...this.advAnalyzer.analyze(chunk));
     results.push(...this.detAnalyzer.analyze(chunk));
     results.push(...this.nounAnalyzer.analyze(chunk));
@@ -360,6 +366,9 @@ export class Analyzer {
   }
 }
 
+const DENY_LIST = [
+  /자\s*$/, // `삼자`를 "삼다v -자e"로 해석하기 위함.
+];
 export function extractNumericLiteral(
   sentence: string,
   analyzer: Analyzer
@@ -377,16 +386,17 @@ export function extractNumericLiteral(
   function mapper(analysis: Analysis): [Token[][], string] | null {
     if (isNaN(analysis.parsed)) return null;
     if (/[.]\s*$/.test(analysis.consumed)) return null;
+    if (DENY_LIST.some((deny) => deny.test(analysis.consumed))) return null;
     const formatted = format(analysis);
     if (/^([.,\s]|$)/.test(analysis.rest) || /\s$/.test(analysis.consumed)) {
       return [[[formatted]], analysis.rest.trim()];
     }
     const match = analysis.rest.match(/^([^\s.,"]+)\s*(.*)$/);
     if (!match) return null;
-    const [_, suffix, rest] = match;
-    let analyses = analyzer.analyzeSuffix(analysis.consumed, suffix);
+    const [, suffix, rest] = match;
+    const analyses = analyzer.analyzeSuffix(analysis.consumed, suffix);
     if (!analyses.length) return null;
-    let tokens: Token[][] = analyses.map((x) => [formatted, ...x.slice(1)]);
+    const tokens: Token[][] = analyses.map((x) => [formatted, ...x.slice(1)]);
     return [tokens, rest];
   }
   return extractAndProcessNumber(sentence, mapper, [
@@ -424,8 +434,8 @@ export function extractArityDesignator(
     if (!analyses.length) return null;
     const formatted = analyses
       .map((x) => {
-        let tokens = x.slice(1);
-        let type = validateTokens(tokens);
+        const tokens = x.slice(1);
+        const type = validateTokens(tokens);
         if (!type) return null;
         return [format(analysis, type), ...tokens];
       })
