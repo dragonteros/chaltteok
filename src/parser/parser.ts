@@ -1,6 +1,6 @@
 import { SyntaxError } from "../errors";
-import { Token } from "../lexer/tokens";
-import { splitArray, toAbbr } from "../utils/utils";
+import { getKeyFromToken, Token } from "../lexer/tokens";
+import { splitArray } from "../utils/utils";
 import { Term, Tree } from "./ast";
 import { IndexedPatterns, matchPattern } from "./pattern";
 
@@ -29,7 +29,7 @@ function parseSentence(tokens: Token[], patterns: IndexedPatterns): Tree {
   const phrases = splitArray(tokens, function (token) {
     if (token.type === "symbol") return null;
     const term: Term = { token, pos: token.pos };
-    return new Tree(term, [], toAbbr(token));
+    return new Tree(term, [], getKeyFromToken(token));
   });
   if (phrases[0].length === 0) {
     throw new SyntaxError("문장을 쉼표로 시작할 수 없습니다.");
@@ -49,7 +49,7 @@ function parseSentence(tokens: Token[], patterns: IndexedPatterns): Tree {
   if (result.length !== 1) {
     const formatted = result.map((x) => x.debug()).join("\n");
     throw new SyntaxError(
-      `구문이 올바르지 않습니다: ${tokens.map(toAbbr).join(" ")}\n\n` +
+      `구문이 올바르지 않습니다: ${tokens.map(getKeyFromToken).join(" ")}\n\n` +
         `다음과 같이 해석되었습니다:\n\n${formatted}`
     );
   }
@@ -62,7 +62,7 @@ export function parse(tokens: Token[], patterns: IndexedPatterns): Tree[] {
   );
   if (sentences[sentences.length - 1].length > 0) {
     throw new SyntaxError(
-      `구문이 마침표로 끝나야 합니다: ${tokens.map(toAbbr).join(" ")}`
+      `구문이 마침표로 끝나야 합니다: ${tokens.map(getKeyFromToken).join(" ")}`
     );
   }
   return sentences

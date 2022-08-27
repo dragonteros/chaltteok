@@ -1,6 +1,5 @@
 export type POS =
   | "명사"
-  | "대명사"
   | "동사"
   | "형용사"
   | "관형사"
@@ -14,10 +13,43 @@ export type WordToken = { type: "word"; lemma: string; pos: POS };
 export type SymbolToken = { type: "symbol"; symbol: string };
 export type NumberToken = {
   type: "number";
-  lemma: string;
   native: boolean;
   number: number;
-  pos: "명사";
+  pos: "명사" | "관형사";
 };
 
 export type Token = IDToken | WordToken | SymbolToken | NumberToken;
+
+export function restoreTokenFromKey(key: string): Token {
+  if (key === "," || key === ".") return { type: "symbol", symbol: key };
+  if (key[0] === "'") {
+    return { type: "id", lemma: key.slice(1, -1), pos: "명사" };
+  }
+  const match = key.match(/^(.+)\[(.+)\]$/);
+  if (match == null)
+    throw new Error("Internal Error restoreTokenFromKey::WRONG_FORMAT");
+
+  const [lemma, pos] = match;
+  if (pos.endsWith("수사") || pos.endsWith("수관형사")) {
+    const number = Number(lemma);
+    if (Number.isNaN(number))
+      throw new Error("Internal Error restoreTokenFromKey::NOT_NUMBER");
+    return {
+      type: "number",
+      native: pos.startsWith("순우리말"),
+      number,
+      pos: pos.endsWith("수사") ? "명사" : "관형사",
+    };
+  }
+
+  return { type: "id", lemma, pos: pos as any };
+}
+
+export function getKeyFromToken(token: Token): string {
+  if (token.type === "symbol") return token.symbol;
+  if (token.type === "id") return `'${token.lemma}'`;
+  if (token.type === "word") return `${token.lemma}[${token.pos}]`;
+  const origin = token.native ? "순우리말" : "한자어";
+  const pos = token.pos === "명사" ? "수사" : "수관형사";
+  return `${token.number}[${origin}${pos}]`;
+}

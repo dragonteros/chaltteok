@@ -1,8 +1,8 @@
 import { Eomi, Yongeon } from "eomi-js";
-import { parseTypeAnnotation } from "../builtin/builtin";
 import { SyntaxError } from "../errors";
 import { Analyzer, makeJosa } from "../lexer/analyzer";
 import { POS, Token } from "../lexer/tokens";
+import { parseTypeAnnotation } from "../parser/pattern";
 import { CompiledImpl, Processor } from "../runner/procedure";
 import { Signature } from "../typechecker/signature";
 import {
@@ -19,8 +19,7 @@ export type Program = {
   main: string;
 };
 
-const POS_MARK_PATTERN =
-  /\[(명사|대명사|관형사|동사|형용사|부사|조사|어미|접미사)\]/;
+const POS_MARK_PATTERN = /\[(명사|동사|형용사|관형사|부사|조사|어미|접미사)\]/;
 
 function splitBlocks(x: string): [string, string][] {
   x = x.replace(/:\s*\{/g, ":{"); // Convert to K&R style

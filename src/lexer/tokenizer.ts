@@ -1,12 +1,11 @@
 import { getJosaPicker } from "josa";
 import { SyntaxError } from "../errors";
-import { toAbbr } from "../utils/utils";
 import {
   Analyzer,
   extractNativeNumeralLiteral,
   extractSinoNumericLiteral,
 } from "./analyzer";
-import { Token } from "./tokens";
+import { getKeyFromToken, Token } from "./tokens";
 
 const 을 = getJosaPicker("을");
 
@@ -24,13 +23,26 @@ function _makeSet(items: Token[][]) {
 }
 
 const FORBIDDEN = [
-  /v -지e (?:아니하|않)다a/,
-  /a -지e (?:아니하|않)다v/,
-  /(?:^|d)\s*나누다v -\(으\)ㅁe/,
-];
-const isForbidden = (x: string) => FORBIDDEN.some((p) => p.test(x));
+  /\[동사\] -지\[어미\] (?:아니하|않)다\[형용사\]/,
+  /\[형용사\] -지\[어미\] (?:아니하|않)다\[동사\]/,
 
-function tagPOS(past: string, chunk: string, analyzer: Analyzer): Token[] {
+  /(?:명사|수사)\] [^'\s]+\[[동형관부]/,
+  /관형사\] [^'\s]+\[[동형관부]/,
+  /의\[조사\] [^'\s]+\[[동형관부]/,
+  /-는\[어미\] [^'\s]+\[[동형관부]/,
+  /-\(으\)[ㄴㄹ]\[어미\] [^'\s]+\[[동형관부]/,
+];
+const FORBIDDEN_AT_FINAL = [/(?:동사|형용사|관형사|부사|조사)\]$/];
+const isForbidden = (x: string, isFinal: boolean) =>
+  FORBIDDEN.some((p) => p.test(x)) ||
+  (isFinal && FORBIDDEN_AT_FINAL.some((p) => p.test(x)));
+
+function tagPOS(
+  past: string,
+  chunk: string,
+  analyzer: Analyzer,
+  isFinal: boolean
+): Token[] {
   let results: Token[][] = [];
   if (".,".includes(chunk)) results.push([{ type: "symbol", symbol: chunk }]);
   results.push(...analyzer.analyze(chunk));
@@ -40,7 +52,10 @@ function tagPOS(past: string, chunk: string, analyzer: Analyzer): Token[] {
 
   results = _makeSet(results).filter(
     (hypothesis) =>
-      !isForbidden([past].concat(hypothesis.map(toAbbr)).join(" "))
+      !isForbidden(
+        [past].concat(hypothesis.map(getKeyFromToken)).join(" "),
+        isFinal
+      )
   );
 
   if (results.length > 1)
@@ -57,13 +72,13 @@ function tokenize(sentence: string, analyzer: Analyzer): Token[] {
   let past = "";
   function push(...args: Token[]) {
     result.push(...args);
-    past = [past].concat(args.map(toAbbr)).join(" ");
+    past = [past].concat(args.map(getKeyFromToken)).join(" ");
   }
   sentence = sentence
     .trim()
     .replace(/\s+/g, " ")
     .replace(/\(.*?\)/g, "");
-  while (sentence.length > 0) {
+  while (sentence !== "") {
     const _result = extractSinoNumericLiteral(sentence, analyzer);
     if (_result != null) {
       const analyses = _result[0];
@@ -77,8 +92,8 @@ function tokenize(sentence: string, analyzer: Analyzer): Token[] {
     const splitPattern = /^([^\s,."]+|[,.]|"[^"]*")\s*(.*)$/;
     const splitted = sentence.match(splitPattern);
     if (!splitted) break;
-    push(...tagPOS(past, splitted[1], analyzer));
     sentence = splitted[2];
+    push(...tagPOS(past, splitted[1], analyzer, sentence === ""));
   }
   return result;
 }

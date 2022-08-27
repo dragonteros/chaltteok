@@ -1,19 +1,26 @@
 import { SyntaxError } from "../errors";
-import { NumberToken, POS, Token, WordToken } from "../lexer/tokens";
+import {
+  getKeyFromToken,
+  NumberToken,
+  POS,
+  Token,
+  WordToken
+} from "../lexer/tokens";
 import { Protocol } from "../runner/procedure";
 import { Signature } from "../typechecker/signature";
 import {
+  Type,
   TypeAnnotation,
   TypePack,
-  VariableAnnotation,
+  VariableAnnotation
 } from "../typechecker/types";
-import { DefaultArray, ListMap, toAbbr } from "../utils/utils.js";
-import { Term, Tree } from "./ast";
+import { DefaultArray, ListMap } from "../utils/utils.js";
+import { getKeyFromTerm, parseTermKey, Term, Tree } from "./ast";
 import { mergeParamTypes } from "./typemerger";
 
 function _formatTerm(term: Term) {
-  if ("token" in term) return toAbbr(term.token);
-  return toAbbr({ type: "word", lemma: "{}", pos: term.pos });
+  if ("token" in term) return getKeyFromToken(term.token);
+  return getKeyFromToken({ type: "word", lemma: "{}", pos: term.pos });
 }
 
 export class Pattern {
@@ -84,29 +91,6 @@ export class PatternArray {
   }
 }
 
-const 두: NumberToken = {
-  type: "number",
-  native: true,
-  lemma: "두",
-  pos: "명사",
-  number: 2,
-};
-const 어느: WordToken = { type: "word", lemma: "어느", pos: "관형사" };
-const 여러: WordToken = { type: "word", lemma: "여러", pos: "관형사" };
-const 몇: WordToken = { type: "word", lemma: "몇", pos: "명사" };
-const 무엇: WordToken = { type: "word", lemma: "무엇", pos: "명사" };
-const 어찌하다: WordToken = { type: "word", lemma: "어찌하다", pos: "동사" };
-const 어떠하다: WordToken = { type: "word", lemma: "어떠하다", pos: "형용사" };
-const 어찌어떠하다: WordToken = {
-  type: "word",
-  lemma: "어찌/어떠하다",
-  pos: "형용사",
-};
-const 다: WordToken = { type: "word", lemma: "-다", pos: "어미" };
-const 변수: WordToken = { type: "word", lemma: "변수", pos: "명사" };
-
-const 의: WordToken = { type: "word", lemma: "의", pos: "조사" };
-const 의_: WordToken = { type: "word", lemma: "의/", pos: "조사" };
 const 이다: WordToken = { type: "word", lemma: "이다", pos: "조사" };
 
 function _allCombinations<T>(cases: (T | null)[][]): T[][] {
@@ -168,7 +152,6 @@ export function getPermutedPatterns(pattern: Pattern): [Pattern, Protocol][] {
   )
     return results;
 
-  const output: Term = { pos: pattern.output.pos };
   const range = genericIdx.map((_, i) => i);
 
   const terms = _swapped(
@@ -177,7 +160,10 @@ export function getPermutedPatterns(pattern: Pattern): [Pattern, Protocol][] {
     genericIdx[swapIdx[1]] + 1
   );
   const argPerm = _swapped(range, swapIdx[0], swapIdx[1]);
-  results.push([new Pattern(terms, output), { arguments: argPerm }]);
+  results.push([
+    new Pattern(terms, { pos: pattern.output.pos, hasOmit: false }),
+    { arguments: argPerm },
+  ]);
 
   for (const k of swapIdx) {
     const terms = pattern.input.slice();
@@ -185,7 +171,10 @@ export function getPermutedPatterns(pattern: Pattern): [Pattern, Protocol][] {
     const argPerm: (number | null)[] = range.slice(0, -1);
     argPerm.splice(k, 0, null);
 
-    results.push([new Pattern(terms, output), { arguments: argPerm }]);
+    results.push([
+      new Pattern(terms, { pos: pattern.output.pos, hasOmit: true }),
+      { arguments: argPerm },
+    ]);
   }
   return results;
 }
@@ -210,6 +199,67 @@ export function deriveSignature(
   return { param, antecedent: antecedent };
 }
 
+/* 갓 해석된 패턴 -> 패턴의 내부 표현 */
+
+export function parseTypeAnnotation(chunk: string): TypeAnnotation {
+  const err = new SyntaxError(
+    "Internal Error parseTypeAnnotation::ILLEGAL_FORMAT"
+  );
+  chunk = chunk.trim();
+  if (chunk === "") return { arity: 0, type: "" };
+  if (chunk === "new" || chunk === "any" || chunk === "lazy") return chunk;
+  if (chunk.endsWith("변수")) {
+    const variableOf = parseTypeAnnotation(chunk.slice(0, -2));
+    if (variableOf === "new" || variableOf === "lazy") throw err;
+    if (typeof variableOf !== "string" && "variableOf" in variableOf) throw err;
+    return { variableOf };
+  }
+
+  const match = chunk.match(/^(\S+) (\S+)$/);
+  if (match == null) throw err;
+  const [, _arity, _type] = match;
+  const atLeast = parseInt(_arity);
+  const arity =
+    _arity === "n" ? "n" : _arity.slice(-1) === "+" ? { atLeast } : atLeast;
+  const type = (function f(t: string): Type {
+    return t.slice(-2) === "[]" ? { listOf: f(t.slice(0, -2)) } : t;
+  })(_type);
+  return { arity, type };
+}
+
+const PATTERN_PREPROCESS_RULES: [RegExp, string][] = [
+  [/무엇\[명사\]/g, '"{any}[명사]", '],
+  [/몇\[관형사\]/g, '"{1 수}[고유어수관형사]", '],
+  [/어찌하다\[동사\]/g, '"{any}[동사]", '],
+  [/어떠하다\[형용사\]/g, '"{1 참거짓}[형용사]", '],
+  [/어찌\/어떠하다\[형용사\]/g, '"{any}[동사],{any}[형용사]",'],
+
+  [/어느\[관형사\] 변수\[명사\]/g, '"{any 변수}[명사]", '],
+
+  [/어느\[관형사\] ([^\]]+)\[명사\] 변수\[명사\]/g, '"{1 $1 변수}[명사]", '],
+  [/어느\[관형사\] ([^\]]+)\[명사\]/g, '"{1 $1}[명사]", '],
+
+  [/여러\[관형사\] ([^\]]+)\[명사\] 변수\[명사\]/g, '"{2+ $1 변수}[명사]", '],
+  [/여러\[관형사\] ([^\]]+)\[명사\]/g, '"{2+ $1}[명사]", '],
+
+  [
+    /(\d+)\[고유어수관형사\] ([^\]]+)\[명사\] 변수\[명사\]/g,
+    '"{$1 $2 변수}[명사]", ',
+  ],
+  [/(\d+)\[고유어수관형사\] ([^\]]+)\[명사\]/g, '"{$1 $2}[명사]", '],
+
+  [/의\/\[조사\]/g, '"의[조사],", '],
+  [/-다\[어미\]$/g, ""],
+  [/(?<!")([^\]]+\])/g, '"$1", '],
+];
+function preprocessPattern(key: string): string[][] {
+  for (const [rule, replacement] of PATTERN_PREPROCESS_RULES) {
+    key = key.replaceAll(rule, replacement);
+  }
+  const chunks: string[] = JSON.parse(`[${key.slice(0, -2)}]`);
+  return chunks.map((chunk) => chunk.split(","));
+}
+
 export function parsePattern(
   tokens: Token[],
   signature?: Signature,
@@ -220,67 +270,33 @@ export function parsePattern(
     const token = tokens[i];
     if (token.type === "id" || token.type === "symbol")
       throw new SyntaxError(
-        "Internal Error parsePattern::ILLEGAL_TOKEN " + JSON.stringify(token)
+        "Internal Error parsePattern::ILLEGAL_TOKEN " + getKeyFromToken(token)
       );
     _tokens.push(token);
   }
 
-  const terms: (Term | null)[][] = [];
-  const termTypes: TypeAnnotation[] = [];
-  for (let i = 0; i < _tokens.length; i++) {
-    const token = _tokens[i];
-    if (equalWord(_tokens[i], 다)) continue;
-
-    const next = i + 1 < _tokens.length ? _tokens[i + 1] : null;
-    let arity = null;
-    if (token.type === "number" && token.native) arity = token.number;
-    if (equalWord(token, 어느)) arity = 1;
-    if (equalWord(token, 두)) arity = 2;
-    if (equalWord(token, 여러)) arity = { atLeast: 2 };
-
-    if (equalWord(token, 의_)) {
-      terms.push([null, { pos: "조사", token: 의 }]);
-    } else if (equalWord(token, 몇)) {
-      terms.push([{ pos: "명사" }]);
-      termTypes.push({ arity: 1, type: "수" });
-    } else if (equalWord(token, 무엇)) {
-      terms.push([{ pos: "명사" }]);
-      termTypes.push("any");
-    } else if (equalWord(token, 어찌하다)) {
-      terms.push([{ pos: "동사" }]);
-      termTypes.push("any");
-    } else if (equalWord(token, 어떠하다)) {
-      terms.push([{ pos: "형용사" }]);
-      termTypes.push({ arity: 1, type: "참거짓" });
-    } else if (equalWord(token, 어찌어떠하다)) {
-      terms.push([{ pos: "형용사" }, { pos: "동사" }]);
-      termTypes.push("any");
-    } else if (arity != null && next && equalWord(next, 변수)) {
-      terms.push([{ pos: "명사" }]);
-      termTypes.push({ variableOf: "any" });
-      i++;
-    } else if (arity != null && next?.pos === "명사") {
-      terms.push([{ pos: "명사" }]);
-      termTypes.push({ arity, type: next.lemma });
-      i++;
-    } else {
-      terms.push([{ token, pos: token.pos }]);
-    }
-  }
+  const chunks = preprocessPattern(tokens.map(getKeyFromToken).join(" "));
+  const terms: (Term | null)[][] = chunks.map((chunk) =>
+    chunk.map((x) => (x === "" ? null : parseTermKey(x)[0]))
+  );
+  const termTypes: TypeAnnotation[] = chunks
+    .map(([x]) => x && parseTermKey(x)[1])
+    .filter((x) => x !== "")
+    .map(parseTypeAnnotation);
 
   const patterns = _allCombinations(terms).map(function (terms) {
     const lastTerm = terms[terms.length - 1];
     let _pos = pos || lastTerm.pos;
     if ("token" in lastTerm && equalWord(lastTerm.token, 이다)) _pos = "형용사";
 
-    return new Pattern(terms, { pos: _pos });
+    return new Pattern(terms, { pos: _pos, hasOmit: false });
   });
 
   let param: TypeAnnotation[];
   try {
     param = termTypes.map((x, i) => mergeParamTypes(x, signature?.param[i]));
   } catch (error) {
-    const abbrs = tokens.map(toAbbr).join(" ");
+    const abbrs = tokens.map(getKeyFromToken).join(" ");
     throw new SyntaxError(`${error} 패턴: ${abbrs}`);
   }
   const _signature: Signature = { param, antecedent: signature?.antecedent };
@@ -288,12 +304,8 @@ export function parsePattern(
   return [patterns, _signature];
 }
 
-export function equalWord(
-  word1: Token,
-  word2: WordToken | NumberToken
-): boolean {
-  if (word1.type !== word2.type) return false;
-  return word1.lemma === word2.lemma && word1.pos === word2.pos;
+export function equalWord(word1: Token, word2: Token): boolean {
+  return getKeyFromToken(word1) === getKeyFromToken(word2);
 }
 
 const 과: WordToken = { type: "word", lemma: "과", pos: "조사" };
@@ -356,7 +368,7 @@ export class IndexedPatterns {
     for (const pattern of patterns) {
       const terms = pattern.input;
       for (let i = 0; i < terms.length; i++) {
-        const key = getKeysFromTerm(terms[i])[0];
+        const key = getKeyFromTerm(terms[i]);
         if (this.data[key] == null) this.data[key] = new PatternArray();
         this.data[key].add(i, pattern);
       }
@@ -366,23 +378,30 @@ export class IndexedPatterns {
 }
 
 function getKeysFromTerm(x: Term): string[] {
-  const keys: string[] = [toAbbr({ type: "word", lemma: "{}", pos: x.pos })];
-  if ("token" in x) keys.unshift(toAbbr(x.token));
+  const keys: string[] = [];
+  if ("token" in x) {
+    keys.push(getKeyFromToken(x.token));
+    if ("number" in x.token || "id" in x.token) {
+      keys.push(getKeyFromToken({ type: "word", lemma: "{}", pos: x.pos }));
+    }
+  } else if ("hasOmit" in x) {
+    const lemma = x.hasOmit ? "{}x" : "{}";
+    keys.push(getKeyFromToken({ type: "word", lemma, pos: x.pos }));
+  }
   return keys;
 }
 
 function _matches(tree: Tree, term: Term): boolean {
-  if (tree.head.pos !== term.pos) return false;
-  if ("token" in term)
-    return (
-      "token" in tree.head &&
-      (term.token.type === "word" || term.token.type === "number") && // TODO
-      equalWord(tree.head.token, term.token)
-    );
+  if (term.pos !== tree.head.pos) return false;
+  if ("index" in term || "index" in tree.head) return false;
+  if ("token" in term) {
+    return "token" in tree.head && equalWord(tree.head.token, term.token);
+  }
+  // term is GenericTerm
+  if ("hasOmit" in tree.head) return tree.head.hasOmit === term.hasOmit;
 
-  if (!("token" in tree.head)) return true;
-  if (tree.head.token.type === "number") return true;
   if (tree.head.token.type === "id") return true;
+  if (tree.head.token.type === "number" && !tree.head.token.native) return true;
   return false;
 }
 
@@ -399,7 +418,7 @@ export function matchPattern(
   if (_m != null) {
     const [bgn, end, children] = _m;
     if (children.length > 1) {
-      const head: Term = { pos: "명사" };
+      const head: Term = { pos: "명사", hasOmit: false };
       const output = new Tree(head, children, "~과~");
       results.push([bgn + (i - maxBefore), end + (i - maxBefore), output]);
     }

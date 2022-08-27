@@ -13,7 +13,8 @@ export type TypeAnnotation =
   | "any"
   | "lazy";
 
-type PRIMITIVE_TYPE = "수" | "정수" | "나눔" | "참거짓";
+export const PRIMITIVE_TYPES = ["수", "정수", "나눔", "참거짓"] as const;
+type PRIMITIVE_TYPE = typeof PRIMITIVE_TYPES[number];
 const SUPERTYPE: Partial<Record<PRIMITIVE_TYPE, PRIMITIVE_TYPE>> = {
   정수: "수",
   나눔: "수",

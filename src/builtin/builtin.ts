@@ -1,12 +1,21 @@
 import { SyntaxError } from "../errors";
-import { POS } from "../lexer/tokens";
-import { ArgumentTerm, GenericTerm, SimpleTerm } from "../parser/ast";
-import { Pattern } from "../parser/pattern";
+import {
+  ArgumentTerm,
+  GenericTerm,
+  parseTermKey,
+  SimpleTerm,
+} from "../parser/ast";
+import { parseTypeAnnotation, Pattern } from "../parser/pattern";
 import { Processor } from "../runner/procedure";
-import { assertStrict, getConcreteValues, Value } from "../runner/values";
+import {
+  assertStrict,
+  getConcreteValues,
+  Thunk,
+  Value,
+} from "../runner/values";
 import { Signature } from "../typechecker/signature";
-import { Type, TypeAnnotation, TypePack } from "../typechecker/types";
-import { fromAbbr, zip } from "../utils/utils.js";
+import { PRIMITIVE_TYPES, TypeAnnotation } from "../typechecker/types";
+import { zip } from "../utils/utils.js";
 
 export function equal(x: Value, y: Value): boolean {
   if (typeof x === "boolean" && typeof y === "boolean") return x === y;
@@ -24,72 +33,55 @@ const pure = function (g: (...args: Value[][]) => Value[]): Processor {
   return (env) => () => g(...env.args.map(assertStrict).map(getConcreteValues));
 };
 const id: Processor = (env) => () => env.args[0];
-
-const _BUILTIN_PATTERN: Record<string, Processor | null> = {
-  "{1 T}n 가p {1 T}n 이다p -> {}a": pure(([a], [b]) => [equal(a, b)]),
-  "{1 T}n 가p {1 T}n 과p 같다a -> {}a": pure(([a], [b]) => [equal(a, b)]),
-  "{2+ T}n 가p 모두 같다a -> {}a": pure((...args) => [
-    args.slice(1).every((x) => equal(x[0], args[0][0])),
-  ]),
-
-  "해당d 수n -> {인수0}n": null,
-  "해당d 정수n -> {인수0}n": null,
-
-  "앞n 의p 것n -> {인수0}n": null,
-  "앞n 의p 수n -> {인수0}n": null,
-  "앞n 의p 정수n -> {인수0}n": null,
-
-  "뒤n 의p 것n -> {인수1}n": null,
-  "뒤n 의p 수n -> {인수1}n": null,
-  "뒤n 의p 정수n -> {인수1}n": null,
-
-  "{any}v -(으)ㄴ다/-는다e -> {}v": id,
-  "{any}v -다e -> {}v": id,
-  "{any}a -다e -> {}a": id,
-  "{any}v -자e -> {}v": id,
+const seq: Processor = (env) => () => {
+  const [x, y] = env.args;
+  if (y instanceof Thunk) y.antecedent = assertStrict(x) as any;
+  return y;
 };
 
-export function parseTypeAnnotation(chunk: string): TypeAnnotation {
-  chunk = chunk.trim();
-  if (chunk === "") return { arity: 0, type: "" };
-  if (chunk === "new" || chunk === "any" || chunk === "lazy") return chunk;
+const _BUILTIN_PATTERN: Record<string, Processor | null> = {
+  "{1 T}[명사] 가[조사] {1 T}[명사] 이다[조사] -> {}[형용사]": pure(
+    ([a], [b]) => [equal(a, b)]
+  ),
+  "{1 T}[명사] 가[조사] {1 T}[명사] 과[조사] 같다[형용사] -> {}[형용사]": pure(
+    ([a], [b]) => [equal(a, b)]
+  ),
+  "{2+ T}[명사] 가[조사] 모두[부사] 같다[형용사] -> {}[형용사]": pure(
+    (...args) => [args.slice(1).every((x) => equal(x[0], args[0][0]))]
+  ),
 
-  const match = chunk.match(/^(\S+) (\S+)( 변수)?$/);
-  if (match == null)
-    throw new SyntaxError("Internal Error _parseTermType::ILLEGAL_FORMAT");
-  const [, _arity, _type, _variable] = match;
-  const atLeast = parseInt(_arity);
-  const arity =
-    _arity === "n" ? "n" : _arity.slice(-1) === "+" ? { atLeast } : atLeast;
-  const type = (function f(t: string): Type {
-    return t.slice(-2) === "[]" ? { listOf: f(t.slice(0, -2)) } : t;
-  })(_type);
-  const annotation: TypePack = { arity, type };
-  if (_variable) return { variableOf: annotation };
-  return annotation;
-}
+  "앞[명사] 의[조사] 것[명사] -> {인수0}[명사]": null,
+  "뒤[명사] 의[조사] 것[명사] -> {인수1}[명사]": null,
+
+  "{any}[동사] -(으)ㄴ다/-는다[어미] -> {}[동사]": id,
+  "{any}[동사] -다[어미] -> {}[동사]": id,
+  "{any}[형용사] -다[어미] -> {}[형용사]": id,
+  "{any}[동사] -자[어미] -> {}[동사]": id,
+  "{any}[동사] -(아/어)[어미] {lazy}[동사] -> {}[동사]": seq,
+  "{any}[동사] -(아/어)[어미] {lazy}x[동사] -> {}[동사]": seq,
+};
+const _BUILTIN_GENERIC_PATTERN = [
+  "해당[관형사] T[명사] -> {인수0}[명사]",
+  "앞[명사] 의[조사] T[명사] -> {인수0}[명사]",
+  "뒤[명사] 의[조사] T[명사] -> {인수1}[명사]",
+  "2[고유어수관형사] T[명사] -> {인수0}[명사]",
+  "3[고유어수관형사] T[명사] -> {인수0}[명사]",
+  "4[고유어수관형사] T[명사] -> {인수0}[명사]",
+]
+  .flatMap((x) => PRIMITIVE_TYPES.map((T) => x.replaceAll("T", T)))
+  .map((x): [string, null] => [x, null]);
 
 function _parseTerm(
   chunk: string
 ): [SimpleTerm | ArgumentTerm, null] | [GenericTerm, TypeAnnotation] {
-  const _token = fromAbbr(chunk.trim());
-  if (_token.type === "symbol")
-    throw new SyntaxError("Internal Error _parseTerm::ILLEGAL_FORMAT");
-  const lemma = _token.lemma;
-  const pos: POS = _token.pos;
-  if (lemma[0] !== "{") {
-    return [{ pos, token: { type: "word", lemma, pos } }, null];
-  }
-  if (lemma.slice(0, 3) === "{인수") {
-    const index = Number(lemma.slice(3, -1));
-    return [{ pos, index }, null];
-  }
-  return [{ pos }, parseTypeAnnotation(lemma.slice(1, -1))];
+  const [term, annotation] = parseTermKey(chunk);
+  if ("hasOmit" in term) return [term, parseTypeAnnotation(annotation)];
+  return [term, null];
 }
 
 function _parsePattern(pattern: string): [Pattern, Signature] {
   const [input, output] = pattern.split("->", 2);
-  const terms = input.match(/\{[^{}]*?\}\w?|[^{}\s]+/g);
+  const terms = input.match(/[^\]]+\]/g);
   if (!terms)
     throw new SyntaxError("Internal Error _parsePattern::ILLEGAL_FORMAT");
   const inputs = terms.map(_parseTerm);
@@ -101,9 +93,9 @@ function _parsePattern(pattern: string): [Pattern, Signature] {
   return [new Pattern(inputTerms, outputTerm), { param }];
 }
 
-export const BUILTIN_PATTERNS = Object.entries(_BUILTIN_PATTERN).map(
-  ([pattern, proc]): [Pattern, Signature, Processor | null] => [
+export const BUILTIN_PATTERNS = Object.entries(_BUILTIN_PATTERN)
+  .concat(_BUILTIN_GENERIC_PATTERN)
+  .map(([pattern, proc]): [Pattern, Signature, Processor | null] => [
     ..._parsePattern(pattern),
     proc,
-  ]
-);
+  ]);

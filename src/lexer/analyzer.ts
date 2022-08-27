@@ -294,7 +294,6 @@ export class Analyzer {
   add(word: string, pos: POS) {
     switch (pos) {
       case "명사":
-      case "대명사":
         this.nounAnalyzer.addNoun(word);
         return;
       case "접미사":
