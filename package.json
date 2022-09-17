@@ -3,7 +3,7 @@
   "version": "0.1.2",
   "description": "자연스러운 한국어를 꿈꾸는 프로그래밍 언어",
   "scripts": {
-    "build": "node ./preludeLoader.js && microbundle",
+    "build": "nearleyc src/coarse/grammar.ne -o src/coarse/grammar.ts && node ./preludeLoader.js && microbundle",
     "dev": "microbundle watch --no-compress -f cjs",
     "test": "mocha test/**/*.{js,ts}"
   },
@@ -20,10 +20,12 @@
   "dependencies": {
     "eomi-js": "^0.2.3",
     "josa": "^3.0.1",
-    "kor-to-number": "^1.1.5"
+    "kor-to-number": "^1.1.5",
+    "nearley": "^2.20.1"
   },
   "devDependencies": {
     "@types/mocha": "^9.1.1",
+    "@types/nearley": "^2.11.2",
     "@types/node": "^16.7.1",
     "@typescript-eslint/eslint-plugin": "^5.28.0",
     "@typescript-eslint/parser": "^5.28.0",

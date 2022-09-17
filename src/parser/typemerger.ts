@@ -1,12 +1,12 @@
 /* ****************** PATTERN DEFINITION PARSING ****************** */
-import { TypeError } from "../errors";
-import { TypeAnnotation, TypePack } from "../typechecker/types";
+import { ChaltteokTypeError, InternalError } from "../base/errors";
+import { TypeAnnotation, TypePack } from "../finegrained/types";
 
 function mergeArity(
   a: TypePack["arity"],
   b: TypePack["arity"]
 ): TypePack["arity"] {
-  const err = new TypeError("패턴의 인수 타입 정의가 모순됩니다.");
+  const err = new ChaltteokTypeError("패턴의 인수 타입 정의가 모순됩니다.");
   if (a === "n" && b === "n") return "n";
   if (a === "n" || b === "n") throw err;
 
@@ -31,7 +31,7 @@ function mergeArity(
 }
 
 function mergeType(a: TypePack["type"], b: TypePack["type"]): TypePack["type"] {
-  const err = new TypeError("패턴의 인수 타입 정의가 모순됩니다.");
+  const err = new ChaltteokTypeError("패턴의 인수 타입 정의가 모순됩니다.");
   if (typeof a === "object" && typeof b === "object") {
     return mergeType(a.listOf, b.listOf);
   } else if (a === b) return a;
@@ -42,10 +42,8 @@ export function mergeParamTypes(
   old: TypeAnnotation,
   update?: TypeAnnotation
 ): TypeAnnotation {
-  const notImplemented = new TypeError(
-    "Internal Error mergeParamTypes::NOT_IMPLEMENTED"
-  );
-  const err = new TypeError("패턴의 인수 타입 정의가 모순됩니다.");
+  const notImplemented = new InternalError("mergeParamTypes::NOT_IMPLEMENTED");
+  const err = new ChaltteokTypeError("패턴의 인수 타입 정의가 모순됩니다.");
   if (update == null) return old;
 
   if (old === "new") throw notImplemented;

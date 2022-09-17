@@ -1,16 +1,9 @@
-export type POS =
-  | "명사"
-  | "동사"
-  | "형용사"
-  | "관형사"
-  | "부사"
-  | "조사"
-  | "어미"
-  | "접미사";
+import { InternalError } from "../base/errors";
+import { POS } from "../base/pos";
 
 export type IDToken = { type: "id"; lemma: string; pos: "명사" };
 export type WordToken = { type: "word"; lemma: string; pos: POS };
-export type SymbolToken = { type: "symbol"; symbol: string };
+export type SymbolToken = { type: "symbol"; symbol: "," | "." };
 export type NumberToken = {
   type: "number";
   native: boolean;
@@ -27,13 +20,13 @@ export function restoreTokenFromKey(key: string): Token {
   }
   const match = key.match(/^(.+)\[(.+)\]$/);
   if (match == null)
-    throw new Error("Internal Error restoreTokenFromKey::WRONG_FORMAT");
+    throw new InternalError("restoreTokenFromKey::WRONG_FORMAT");
 
   const [lemma, pos] = match;
   if (pos.endsWith("수사") || pos.endsWith("수관형사")) {
     const number = Number(lemma);
     if (Number.isNaN(number))
-      throw new Error("Internal Error restoreTokenFromKey::NOT_NUMBER");
+      throw new InternalError("restoreTokenFromKey::NOT_NUMBER");
     return {
       type: "number",
       native: pos.startsWith("순우리말"),

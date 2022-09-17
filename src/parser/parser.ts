@@ -1,7 +1,7 @@
-import { SyntaxError } from "../errors";
-import { getKeyFromToken, Token } from "../lexer/tokens";
+import { ChaltteokSyntaxError } from "../base/errors";
+import { ConcreteTerm, Tree } from "../finegrained/terms";
+import { getKeyFromToken, Token } from "../finegrained/tokens";
 import { splitArray } from "../utils/utils";
-import { Term, Tree } from "./ast";
 import { IndexedPatterns, matchPattern } from "./pattern";
 
 function phraseOperation(trees: Tree[], patterns: IndexedPatterns): Tree[] {
@@ -28,17 +28,17 @@ function phraseOperation(trees: Tree[], patterns: IndexedPatterns): Tree[] {
 function parseSentence(tokens: Token[], patterns: IndexedPatterns): Tree {
   const phrases = splitArray(tokens, function (token) {
     if (token.type === "symbol") return null;
-    const term: Term = { token, pos: token.pos };
+    const term: ConcreteTerm = { token, pos: token.pos };
     return new Tree(term, [], getKeyFromToken(token));
   });
   if (phrases[0].length === 0) {
-    throw new SyntaxError("문장을 쉼표로 시작할 수 없습니다.");
+    throw new ChaltteokSyntaxError("문장을 쉼표로 시작할 수 없습니다.");
   }
   if (phrases[phrases.length - 1].length === 0) {
-    throw new SyntaxError("문장을 쉼표로 끝낼 수 없습니다.");
+    throw new ChaltteokSyntaxError("문장을 쉼표로 끝낼 수 없습니다.");
   }
   if (phrases.some((x) => x.length === 0)) {
-    throw new SyntaxError("둘 이상의 쉼표를 연달아 쓸 수 없습니다.");
+    throw new ChaltteokSyntaxError("둘 이상의 쉼표를 연달아 쓸 수 없습니다.");
   }
 
   for (let i = 1; i < phrases.length; i += 2) {
@@ -47,13 +47,17 @@ function parseSentence(tokens: Token[], patterns: IndexedPatterns): Tree {
   const result = phraseOperation(phrases.flat(), patterns);
 
   if (result.length !== 1) {
-    const formatted = result.map((x) => x.debug()).join("\n");
-    throw new SyntaxError(
-      `구문이 올바르지 않습니다: ${tokens.map(getKeyFromToken).join(" ")}\n\n` +
-        `다음과 같이 해석되었습니다:\n\n${formatted}`
+    throw new ChaltteokSyntaxError(
+      `구문이 올바르지 않습니다: ${tokens.map(getKeyFromToken).join(" ")}`
     );
   }
-  return result[0];
+  const expr = result[0];
+  if ("pos" in expr) {
+    throw new ChaltteokSyntaxError(
+      `구문이 올바르지 않습니다: ${tokens.map(getKeyFromToken).join(" ")}`
+    );
+  }
+  return expr;
 }
 
 export function parse(tokens: Token[], patterns: IndexedPatterns): Tree[] {
@@ -61,7 +65,7 @@ export function parse(tokens: Token[], patterns: IndexedPatterns): Tree[] {
     token.type === "symbol" && token.symbol === "." ? null : token
   );
   if (sentences[sentences.length - 1].length > 0) {
-    throw new SyntaxError(
+    throw new ChaltteokSyntaxError(
       `구문이 마침표로 끝나야 합니다: ${tokens.map(getKeyFromToken).join(" ")}`
     );
   }

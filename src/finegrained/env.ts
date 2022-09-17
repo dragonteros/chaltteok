@@ -1,7 +1,5 @@
-/* Env */
-
-import { RuntimeError } from "../errors";
-import { Tree } from "../parser/ast";
+import { ChaltteokRuntimeError } from "../base/errors";
+import { ExprAST } from "./ast";
 import {
   Box,
   getConcreteValues,
@@ -16,7 +14,7 @@ export abstract class Env {
   constructor(readonly args: ValuePack[]) {}
   getArg(idx: number): ValuePack {
     if (this.args.length <= idx)
-      throw new RuntimeError(`${idx}번째 인수가 없습니다.`);
+      throw new ChaltteokRuntimeError(`${idx}번째 인수가 없습니다.`);
     return this.args[idx];
   }
   get(id: string): Box {
@@ -30,5 +28,5 @@ export abstract class Env {
   set(id: string, value: StrictValuePack) {
     this.memory[id].data = getConcreteValues(value);
   }
-  abstract lazy(expr: Tree): Thunk;
+  abstract lazy(expr: ExprAST): Thunk;
 }

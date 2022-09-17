@@ -1,18 +1,37 @@
+import { ExprAST } from "src/finegrained/ast";
+import { Tree } from "src/finegrained/terms";
+import {
+  ChaltteokRuntimeError,
+  ChaltteokSyntaxError,
+  InternalError,
+  SourceFile,
+  WithSpan,
+} from "../base/errors";
+import { VocabEntry } from "../base/pos";
 import { BUILTIN_PATTERNS } from "../builtin/builtin";
 import { PRELUDE } from "../builtin/prelude";
-import { RuntimeError, SyntaxError } from "../errors";
-import { Analyzer } from "../lexer/analyzer";
-import { tokenize } from "../lexer/tokenizer";
-import { Token } from "../lexer/tokens";
 import {
   addVocab,
-  Definition,
   parseJS,
-  parseProgram,
+  parseStructure,
   Substituter,
-  VocabEntry,
-} from "../parser/aggregator";
-import { Tree } from "../parser/ast";
+} from "../coarse/aggregator";
+import { Body, Statement } from "../coarse/structure";
+import { Env } from "../finegrained/env";
+import { Impl, Procedure, Protocol } from "../finegrained/procedure";
+import { Token } from "../finegrained/tokens";
+import { TypePack, VariableAnnotation } from "../finegrained/types";
+import {
+  getConcreteValues,
+  NewBox,
+  RefBox,
+  StrictValuePack,
+  Thunk,
+  Value,
+  ValuePack,
+} from "../finegrained/values";
+import { Analyzer } from "../lexer/analyzer";
+import { tokenize } from "../lexer/tokenizer";
 import { parse } from "../parser/parser";
 import {
   deriveSignature,
@@ -23,19 +42,7 @@ import {
 } from "../parser/pattern";
 import { isMoreSpecificSignature } from "../typechecker/resolver";
 import { getType, matchesSignature, Signature } from "../typechecker/signature";
-import { TypePack, VariableAnnotation } from "../typechecker/types";
 import { ListMap, overloaded, zip } from "../utils/utils";
-import { Env } from "./env";
-import { Impl, Procedure, Protocol } from "./procedure";
-import {
-  getConcreteValues,
-  NewBox,
-  RefBox,
-  StrictValuePack,
-  Thunk,
-  Value,
-  ValuePack,
-} from "./values";
 
 function allEqual<T>(collection: T[]): boolean {
   if (collection.length === 0) return true;
@@ -45,8 +52,7 @@ function allEqual<T>(collection: T[]): boolean {
 
 function assertCompatible(signatures: Signature[]): void {
   const features = signatures.map(shouldStrict);
-  if (!allEqual(features))
-    throw new RuntimeError("Internal Error assertCompatible");
+  if (!allEqual(features)) throw new InternalError("assertCompatible");
 }
 
 function shouldStrict(signature: Signature): boolean[] {
@@ -64,18 +70,19 @@ export class Context {
     this.patterns = new IndexedPatterns();
   }
 
-  tokenize(sentence: string): Token[] {
+  tokenize(sentence: WithSpan<string>): Token[] {
     return this.substituter.run(tokenize(sentence, this.analyzer));
   }
 
-  loadVocab(vocab: VocabEntry): [Token, string][] {
-    const synonym = addVocab(this.analyzer, vocab);
-    if (synonym == null) return [];
-    const src: Token = { type: "word", lemma: vocab.lemma, pos: vocab.pos };
-    return [[src, synonym]];
+  loadVocab(vocab: VocabEntry): void {
+    addVocab(this.analyzer, vocab);
   }
-
-  loadSynonym(token: Token, synonym: string): void {
+  loadSynonym(vocab: VocabEntry, synonym: WithSpan<string>): void {
+    const token: Token = {
+      type: "word",
+      lemma: vocab.lemma.value,
+      pos: vocab.pos.value,
+    };
     this.substituter.add(token, tokenize(synonym, this.analyzer));
   }
 
@@ -84,10 +91,16 @@ export class Context {
   }
 }
 
+type Definition = { patterns: WithSpan<string>[]; body: Body };
+
 export class Module {
   private readonly context: Context;
+  private readonly vocab: VocabEntry[] = [];
+  private readonly synonyms: Record<number, WithSpan<string>> = {};
+  private readonly definitions: Definition[] = [];
   private readonly patterns: Pattern[] = [];
   readonly patternLocations: Record<string, Set<number>>;
+  private readonly main: WithSpan<string>[] = [];
 
   // pattern -> signature -> procedure
   // looked up at runtime
@@ -96,35 +109,60 @@ export class Module {
 
   constructor(
     public readonly imports: Module[],
-    private readonly vocab: VocabEntry[],
-    private readonly definitions: Definition[],
-    private readonly main: string
+    public readonly sourceFile: SourceFile,
+    statements: Statement[]
   ) {
     this.context = this.initContext();
     this.patternLocations = this.getPatternLocations();
 
-    this.lookup = new ListMap();
+    for (const statement of statements) {
+      switch (statement.type) {
+        case "Expr":
+          this.main.push(statement.expr);
+          break;
+        case "VocabDef":
+          this.vocab.push(statement.vocab);
+          break;
+        case "SynonymDef":
+          this.synonyms[this.vocab.length] = statement.synonym;
+          this.vocab.push(statement.vocab);
+          break;
+        case "VocabFunDef":
+          this.vocab.push(statement.vocab);
+          this.definitions.push({
+            patterns: [statement.vocab.lemma],
+            body: statement.body,
+          });
+          break;
+        case "FunDef":
+          this.definitions.push(statement);
+          break;
+      }
+    }
 
+    this.lookup = new ListMap();
     this.build();
   }
 
   private initContext(): Context {
     const context = new Context();
-    const synonyms: [Token, string][] = [];
 
     for (const vocab of this.vocab) {
-      synonyms.push(...context.loadVocab(vocab));
+      context.loadVocab(vocab);
     }
     for (const module of this.imports) {
       for (const vocab of module.vocab) {
-        synonyms.push(...context.loadVocab(vocab));
+        context.loadVocab(vocab);
+      }
+      for (const [vocabIdx, synonym] of Object.entries(module.synonyms)) {
+        context.loadSynonym(module.vocab[+vocabIdx], synonym);
       }
       for (const pattern of module.patterns) {
         context.loadPattern(pattern);
       }
     }
-    for (const [src, trg] of synonyms) {
-      context.loadSynonym(src, trg);
+    for (const [vocabIdx, synonym] of Object.entries(this.synonyms)) {
+      context.loadSynonym(this.vocab[+vocabIdx], synonym);
     }
 
     return context;
@@ -143,12 +181,12 @@ export class Module {
     return patternLocations;
   }
 
-  protected antecedentPattern(pattern: Pattern): void {
+  protected registerPattern(pattern: Pattern): void {
     this.patterns.push(pattern);
     this.context.loadPattern(pattern);
   }
 
-  protected antecedentImpl(impl: Impl): number {
+  protected registerImpl(impl: Impl): number {
     const implID = this.impls.length;
     this.impls.push(impl);
     return implID;
@@ -170,13 +208,16 @@ export class Module {
 
   protected build(): void {
     const tokenized: Array<
-      [Token[][], [string, Signature, Protocol | undefined][]]
+      [Token[], [string, Signature, Protocol | undefined][]]
     > = [];
 
     for (const definition of this.definitions) {
-      if (definition.body[0] === "{JS}") {
-        const [impl, signature, pos] = parseJS(definition.body[1]);
-        const implID = this.antecedentImpl(impl);
+      if (definition.body.type === "JSBody") {
+        const [impl, signature, pos] = parseJS(
+          definition.body,
+          this.sourceFile
+        );
+        const implID = this.registerImpl(impl);
 
         for (const pattern of definition.patterns) {
           const tokens = this.context.tokenize(pattern);
@@ -190,13 +231,13 @@ export class Module {
               newPattern,
               newSignature
             )) {
-              this.antecedentPattern(ptn);
+              this.registerPattern(ptn);
               this.lookup.get(ptn.key).push([sign, implID, protocol]);
             }
           }
         }
       } else {
-        const body = definition.body.map((x) => this.context.tokenize(x));
+        const body = this.context.tokenize(definition.body.expr);
         const expanded: [string, Signature, Protocol | undefined][] = [];
 
         for (const pattern of definition.patterns) {
@@ -207,7 +248,7 @@ export class Module {
               newPattern,
               newSignature
             )) {
-              this.antecedentPattern(ptn);
+              this.registerPattern(ptn);
               expanded.push([ptn.key, sign, protocol]);
             }
           }
@@ -218,8 +259,8 @@ export class Module {
     }
 
     for (const [body, expanded] of tokenized) {
-      const _body = body.flatMap((x) => parse(x, this.context.patterns));
-      const implID = this.antecedentImpl({ type: "expr", body: _body });
+      const _body = parse(body, this.context.patterns);
+      const implID = this.registerImpl({ type: "expr", body: _body });
       for (const [key, sign, protocol] of expanded) {
         this.lookup.get(key).push([sign, implID, protocol]);
       }
@@ -238,7 +279,7 @@ export class Module {
       .get(patternKey)
       .find(
         ([_signature, ,]) =>
-          JSON.stringify(signature) == JSON.stringify(_signature)
+          JSON.stringify(signature) === JSON.stringify(_signature)
       );
     if (match == null) return undefined;
     const [, implID, protocol] = match;
@@ -272,13 +313,13 @@ export class Module {
   }
 
   runMain(): StrictValuePack {
-    const tokens = this.context.tokenize(this.main);
-    const exprs = parse(tokens, this.context.patterns);
-
-    const env = new ModuleEnv(this, []);
     let value: StrictValuePack = [];
-    for (const expr of exprs) {
-      value = env.lazy(expr).strict();
+    const env = new ModuleEnv(this, []);
+
+    for (const main of this.main) {
+      const tokens = this.context.tokenize(main);
+      const exprs = parse(tokens, this.context.patterns);
+      for (const expr of exprs) value = env.lazy(expr).strict();
     }
     return value;
   }
@@ -295,14 +336,14 @@ function unwrapProtocol(
   for (const i of protocol.arguments) {
     if (i != null) {
       if (i < 0 || i >= args.length) {
-        throw new RuntimeError("Internal Error unwrapProtocol::WRONG_ARITY.");
+        throw new InternalError("unwrapProtocol::WRONG_ARITY.");
       }
       inputs.push(args[i]);
     } else if (antecedent != null) {
       inputs.push(antecedent);
       antecedent = undefined;
     } else {
-      throw new RuntimeError("Internal Error unwrap_protocol::NO_ANTECEDENT.");
+      throw new InternalError("unwrap_protocol::NO_ANTECEDENT.");
     }
   }
   return [inputs, antecedent];
@@ -343,8 +384,8 @@ class ModuleEnv extends Env {
     return infos;
   }
 
-  interpret(expr: Tree, antecedent?: Value[] | RefBox): ValuePack {
-    const err = new SyntaxError("표현식 해석에 실패했습니다.");
+  interpret(expr: ExprAST, antecedent?: Value[] | RefBox): ValuePack {
+    const err = new ChaltteokSyntaxError("표현식 해석에 실패했습니다.");
     if ("index" in expr.head) {
       return this.getArg(expr.head.index);
     }
@@ -382,7 +423,9 @@ class ModuleEnv extends Env {
     args: ValuePack[],
     antecedent?: Value[] | RefBox
   ): StrictValuePack {
-    const err = new RuntimeError("인수의 타입에 맞는 함수를 찾지 못했습니다.");
+    const err = new ChaltteokRuntimeError(
+      "인수의 타입에 맞는 함수를 찾지 못했습니다."
+    );
 
     const signatureInfos = this.getSignatureInfos(key);
     if (signatureInfos.length === 0) throw err;
@@ -427,7 +470,7 @@ class ModuleEnv extends Env {
       if (child instanceof Thunk) return child.strict();
       if (param === "new") return child;
       if ("data" in child && child.data == null)
-        throw new Error("Internal Error casted::NEW_BOX");
+        throw new InternalError("casted::NEW_BOX");
 
       function unwrap(x: Value[] | RefBox) {
         return "data" in x ? x.data : x;
@@ -442,22 +485,31 @@ class ModuleEnv extends Env {
 
 class PreludeModule extends Module {
   constructor() {
-    const program = parseProgram(PRELUDE);
-    super([], program.vocab, program.definitions, program.main);
+    const sourceFile: SourceFile = {
+      path: "prelude", // TODO
+      content: PRELUDE,
+    };
+    const program = parseStructure(
+      { value: PRELUDE, span: { start: 0, end: PRELUDE.length } },
+      sourceFile
+    );
+    super([], sourceFile, program);
   }
 
   protected build(): void {
-    for (const [pattern, signature, proc] of BUILTIN_PATTERNS) {
-      if (proc == null) {
-        this.antecedentPattern(pattern);
+    for (const [pattern, signature, action] of BUILTIN_PATTERNS) {
+      if (action[0] === "ArgRef" || action[0] === "NumberLiteral") {
+        this.registerPattern(pattern);
+        // TODO
         continue;
       }
-      const implID = this.antecedentImpl({ type: "compiled", body: proc });
+      const [actionType, actionValue] = action;
+      const implID = this.registerImpl({ type: "compiled", body: action[1] });
       for (const [ptn, sign, protocol] of this.expandPatterns(
         pattern,
         signature
       )) {
-        this.antecedentPattern(ptn);
+        this.registerPattern(ptn);
         this.lookup.get(ptn.key).push([sign, implID, protocol]);
       }
     }

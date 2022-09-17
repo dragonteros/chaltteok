@@ -1,8 +1,6 @@
 /* ****************** OVERLOADING RESOLUTION ****************** */
 
-import { TypeError } from "../errors";
-import { DefaultMap, nullAccepting, zip } from "../utils/utils";
-import { Signature } from "./signature";
+import { InternalError } from "../base/errors";
 import {
   ConcreteType,
   isConcreteType,
@@ -11,7 +9,9 @@ import {
   lowestCommonSupertype,
   TypeAnnotation,
   TypePack,
-} from "./types";
+} from "../finegrained/types";
+import { DefaultMap, nullAccepting, zip } from "../utils/utils";
+import { Signature } from "./signature";
 
 type Condition<T> = {
   parameter: string;
@@ -101,8 +101,7 @@ class ParametrizedSubsumption {
   private listOfs: number;
   constructor(type: TypePack["type"]) {
     const [parameter, listOfs] = ParametrizedSubsumption.decompose(type);
-    if (parameter == null)
-      throw new TypeError("Internal Error ParametrizedSubsumption");
+    if (parameter == null) throw new InternalError("ParametrizedSubsumption");
     this.parameter = parameter;
     this.listOfs = listOfs;
   }
@@ -168,7 +167,7 @@ export function isMoreSpecificSignature(a: Signature, b: Signature): boolean {
 
     if (_comparison.arity) {
       if (_comparison.arity === "n")
-        throw new TypeError("Internal Error isMoreSpecificSignatureThan");
+        throw new InternalError("isMoreSpecificSignatureThan");
       if (typeof _comparison.arity === "number") {
         arityRange.updateLower(_comparison.arity);
         arityRange.updateUpper(_comparison.arity);

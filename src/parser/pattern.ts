@@ -1,27 +1,22 @@
-import { SyntaxError } from "../errors";
+import { ChaltteokSyntaxError, InternalError } from "../base/errors";
+import { POS } from "../base/pos";
+import { Protocol } from "../finegrained/procedure";
+import { getKeyFromTerm, parseTermKey, Term, Tree } from "../finegrained/terms";
 import {
   getKeyFromToken,
   NumberToken,
-  POS,
   Token,
-  WordToken
-} from "../lexer/tokens";
-import { Protocol } from "../runner/procedure";
-import { Signature } from "../typechecker/signature";
+  WordToken,
+} from "../finegrained/tokens";
 import {
   Type,
   TypeAnnotation,
   TypePack,
-  VariableAnnotation
-} from "../typechecker/types";
+  VariableAnnotation,
+} from "../finegrained/types";
+import { Signature } from "../typechecker/signature";
 import { DefaultArray, ListMap } from "../utils/utils.js";
-import { getKeyFromTerm, parseTermKey, Term, Tree } from "./ast";
 import { mergeParamTypes } from "./typemerger";
-
-function _formatTerm(term: Term) {
-  if ("token" in term) return getKeyFromToken(term.token);
-  return getKeyFromToken({ type: "word", lemma: "{}", pos: term.pos });
-}
 
 export class Pattern {
   input: Term[];
@@ -30,7 +25,7 @@ export class Pattern {
   constructor(input: Term[], output: Term) {
     this.input = input;
     this.output = output;
-    this.key = input.map(_formatTerm).join(" ");
+    this.key = input.map(getKeyFromTerm).join(" ");
   }
 }
 // TODO: keep only POS thing and move argument something somewhere else
@@ -202,9 +197,7 @@ export function deriveSignature(
 /* 갓 해석된 패턴 -> 패턴의 내부 표현 */
 
 export function parseTypeAnnotation(chunk: string): TypeAnnotation {
-  const err = new SyntaxError(
-    "Internal Error parseTypeAnnotation::ILLEGAL_FORMAT"
-  );
+  const err = new InternalError("parseTypeAnnotation::ILLEGAL_FORMAT");
   chunk = chunk.trim();
   if (chunk === "") return { arity: 0, type: "" };
   if (chunk === "new" || chunk === "any" || chunk === "lazy") return chunk;
@@ -269,8 +262,8 @@ export function parsePattern(
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token.type === "id" || token.type === "symbol")
-      throw new SyntaxError(
-        "Internal Error parsePattern::ILLEGAL_TOKEN " + getKeyFromToken(token)
+      throw new InternalError(
+        "parsePattern::ILLEGAL_TOKEN " + getKeyFromToken(token)
       );
     _tokens.push(token);
   }
@@ -297,7 +290,7 @@ export function parsePattern(
     param = termTypes.map((x, i) => mergeParamTypes(x, signature?.param[i]));
   } catch (error) {
     const abbrs = tokens.map(getKeyFromToken).join(" ");
-    throw new SyntaxError(`${error} 패턴: ${abbrs}`);
+    throw new ChaltteokSyntaxError(`${error} 패턴: ${abbrs}`);
   }
   const _signature: Signature = { param, antecedent: signature?.antecedent };
 
@@ -378,22 +371,17 @@ export class IndexedPatterns {
 }
 
 function getKeysFromTerm(x: Term): string[] {
-  const keys: string[] = [];
+  const keys: string[] = [getKeyFromTerm(x)];
   if ("token" in x) {
-    keys.push(getKeyFromToken(x.token));
     if ("number" in x.token || "id" in x.token) {
-      keys.push(getKeyFromToken({ type: "word", lemma: "{}", pos: x.pos }));
+      keys.push(getKeyFromTerm({ pos: x.pos, hasOmit: false }));
     }
-  } else if ("hasOmit" in x) {
-    const lemma = x.hasOmit ? "{}x" : "{}";
-    keys.push(getKeyFromToken({ type: "word", lemma, pos: x.pos }));
   }
   return keys;
 }
 
 function _matches(tree: Tree, term: Term): boolean {
   if (term.pos !== tree.head.pos) return false;
-  if ("index" in term || "index" in tree.head) return false;
   if ("token" in term) {
     return "token" in tree.head && equalWord(tree.head.token, term.token);
   }
@@ -454,7 +442,7 @@ export function matchPattern(
           const a = pattern.output.pos;
           const b = outputs[pattern.key][0].pos;
           if (a !== b)
-            throw new SyntaxError(
+            throw new ChaltteokSyntaxError(
               `'${pattern.key}' 꼴의 두 패턴이 품사가 다릅니다: ${a}, ${b}`
             );
         }
@@ -462,7 +450,9 @@ export function matchPattern(
     }
     const cands = Object.keys(outputs);
     if (cands.length > 1) {
-      throw new SyntaxError("패턴 적용이 모호합니다: " + cands.join(", "));
+      throw new ChaltteokSyntaxError(
+        "패턴 적용이 모호합니다: " + cands.join(", ")
+      );
     } else if (cands.length === 1) {
       const key = cands[0];
       results.push([bgn, end, new Tree(...outputs[key], key)]);

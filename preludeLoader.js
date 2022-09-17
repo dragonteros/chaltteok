@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { resolve } from "path";
 
-const dir = "./src/builtin/";
+const dir = "./prelude/";
 const data = readdirSync(dir)
   .filter((filename) => filename.endsWith(".chaltteok"))
   .map((filename) => {

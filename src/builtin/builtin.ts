@@ -1,21 +1,16 @@
-import { SyntaxError } from "../errors";
-import {
-  ArgumentTerm,
-  GenericTerm,
-  parseTermKey,
-  SimpleTerm,
-} from "../parser/ast";
-import { parseTypeAnnotation, Pattern } from "../parser/pattern";
-import { Processor } from "../runner/procedure";
+import { InternalError } from "../base/errors";
+import { Processor } from "../finegrained/procedure";
+import { ConcreteTerm, GenericTerm, parseTermKey } from "../finegrained/terms";
+import { PRIMITIVE_TYPES, TypeAnnotation } from "../finegrained/types";
 import {
   assertStrict,
   getConcreteValues,
   Thunk,
   Value,
-} from "../runner/values";
+} from "../finegrained/values";
+import { parseTypeAnnotation, Pattern } from "../parser/pattern";
 import { Signature } from "../typechecker/signature";
-import { PRIMITIVE_TYPES, TypeAnnotation } from "../typechecker/types";
-import { zip } from "../utils/utils.js";
+import { zip } from "../utils/utils";
 
 export function equal(x: Value, y: Value): boolean {
   if (typeof x === "boolean" && typeof y === "boolean") return x === y;
@@ -39,41 +34,59 @@ const seq: Processor = (env) => () => {
   return y;
 };
 
-const _BUILTIN_PATTERN: Record<string, Processor | null> = {
-  "{1 T}[명사] 가[조사] {1 T}[명사] 이다[조사] -> {}[형용사]": pure(
-    ([a], [b]) => [equal(a, b)]
-  ),
-  "{1 T}[명사] 가[조사] {1 T}[명사] 과[조사] 같다[형용사] -> {}[형용사]": pure(
-    ([a], [b]) => [equal(a, b)]
-  ),
-  "{2+ T}[명사] 가[조사] 모두[부사] 같다[형용사] -> {}[형용사]": pure(
-    (...args) => [args.slice(1).every((x) => equal(x[0], args[0][0]))]
-  ),
+export type Action =
+  | { type: "FunCall"; fun: Processor }
+  | { type: "ArgRef"; index: number };
 
-  "앞[명사] 의[조사] 것[명사] -> {인수0}[명사]": null,
-  "뒤[명사] 의[조사] 것[명사] -> {인수1}[명사]": null,
+const _BUILTIN_PATTERN: Record<string, Action> = {
+  "{1 T}[명사] 가[조사] {1 T}[명사] 이다[조사] -> {}[형용사]": {
+    type: "FunCall",
+    fun: pure(([a], [b]) => [equal(a, b)]),
+  },
+  "{1 T}[명사] 가[조사] {1 T}[명사] 과[조사] 같다[형용사] -> {}[형용사]": {
+    type: "FunCall",
+    fun: pure(([a], [b]) => [equal(a, b)]),
+  },
+  "{2+ T}[명사] 가[조사] 모두[부사] 같다[형용사] -> {}[형용사]": {
+    type: "FunCall",
+    fun: pure((...args) => [
+      args.slice(1).every((x) => equal(x[0], args[0][0])),
+    ]),
+  },
 
-  "{any}[동사] -(으)ㄴ다/-는다[어미] -> {}[동사]": id,
-  "{any}[동사] -다[어미] -> {}[동사]": id,
-  "{any}[형용사] -다[어미] -> {}[형용사]": id,
-  "{any}[동사] -자[어미] -> {}[동사]": id,
-  "{any}[동사] -(아/어)[어미] {lazy}[동사] -> {}[동사]": seq,
-  "{any}[동사] -(아/어)[어미] {lazy}x[동사] -> {}[동사]": seq,
+  "앞[명사] 의[조사] 것[명사] -> {}[명사]": { type: "ArgRef", index: 0 },
+  "뒤[명사] 의[조사] 것[명사] -> {}[명사]": { type: "ArgRef", index: 1 },
+
+  "{any}[동사] -(으)ㄴ다/-는다[어미] -> {}[동사]": { type: "FunCall", fun: id },
+  "{any}[동사] -다[어미] -> {}[동사]": { type: "FunCall", fun: id },
+  "{any}[형용사] -다[어미] -> {}[형용사]": { type: "FunCall", fun: id },
+  "{any}[동사] -자[어미] -> {}[동사]": { type: "FunCall", fun: id },
+  "{any}[동사] -(아/어)[어미] {lazy}[동사] -> {}[동사]": {
+    type: "FunCall",
+    fun: seq,
+  },
+  "{any}[동사] -(아/어)[어미] {lazy}x[동사] -> {}[동사]": {
+    type: "FunCall",
+    fun: seq,
+  },
 };
-const _BUILTIN_GENERIC_PATTERN = [
-  "해당[관형사] T[명사] -> {인수0}[명사]",
-  "앞[명사] 의[조사] T[명사] -> {인수0}[명사]",
-  "뒤[명사] 의[조사] T[명사] -> {인수1}[명사]",
-  "2[고유어수관형사] T[명사] -> {인수0}[명사]",
-  "3[고유어수관형사] T[명사] -> {인수0}[명사]",
-  "4[고유어수관형사] T[명사] -> {인수0}[명사]",
-]
-  .flatMap((x) => PRIMITIVE_TYPES.map((T) => x.replaceAll("T", T)))
-  .map((x): [string, null] => [x, null]);
+const _BUILTIN_GENERIC_PATTERN = Object.entries({
+  "해당[관형사] T[명사] -> {}[명사]": 0,
+  "앞[명사] 의[조사] T[명사] -> {}[명사]": 0,
+  "뒤[명사] 의[조사] T[명사] -> {}[명사]": 1,
+  "2[고유어수관형사] T[명사] -> {}[명사]": 0,
+  "3[고유어수관형사] T[명사] -> {}[명사]": 0,
+  "4[고유어수관형사] T[명사] -> {인수0}[명사]": 0,
+}).flatMap(([x, index]) =>
+  PRIMITIVE_TYPES.map((T): [string, Action] => [
+    x.replaceAll("T", T),
+    { type: "ArgRef", index },
+  ])
+);
 
 function _parseTerm(
   chunk: string
-): [SimpleTerm | ArgumentTerm, null] | [GenericTerm, TypeAnnotation] {
+): [ConcreteTerm, null] | [GenericTerm, TypeAnnotation] {
   const [term, annotation] = parseTermKey(chunk);
   if ("hasOmit" in term) return [term, parseTypeAnnotation(annotation)];
   return [term, null];
@@ -82,8 +95,7 @@ function _parseTerm(
 function _parsePattern(pattern: string): [Pattern, Signature] {
   const [input, output] = pattern.split("->", 2);
   const terms = input.match(/[^\]]+\]/g);
-  if (!terms)
-    throw new SyntaxError("Internal Error _parsePattern::ILLEGAL_FORMAT");
+  if (!terms) throw new InternalError("_parsePattern::ILLEGAL_FORMAT");
   const inputs = terms.map(_parseTerm);
   const inputTerms = inputs.map((x) => x[0]);
   const param = inputs
@@ -95,7 +107,7 @@ function _parsePattern(pattern: string): [Pattern, Signature] {
 
 export const BUILTIN_PATTERNS = Object.entries(_BUILTIN_PATTERN)
   .concat(_BUILTIN_GENERIC_PATTERN)
-  .map(([pattern, proc]): [Pattern, Signature, Processor | null] => [
+  .map(([pattern, blueprint]): [Pattern, Signature, Action] => [
     ..._parsePattern(pattern),
-    proc,
+    blueprint,
   ]);

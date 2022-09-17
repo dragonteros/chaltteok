@@ -1,6 +1,4 @@
-import { RuntimeError } from "../errors";
-
-/* Values */
+import { ChaltteokRuntimeError, ChaltteokTypeError } from "../base/errors";
 
 // TODO: remove DivV from ast.ts!
 export type NumberV = { type: "수"; 값: number };
@@ -22,11 +20,13 @@ export type ValuePack = StrictValuePack | Thunk;
 
 export function assertStrict(values: ValuePack): StrictValuePack {
   if (values instanceof Thunk)
-    throw new TypeError("인수의 타입을 명시해야 합니다.");
+    throw new ChaltteokTypeError("인수의 타입을 명시해야 합니다.");
   return values;
 }
 export function getConcreteValues(valuePack: StrictValuePack): Value[] {
   if (Array.isArray(valuePack)) return valuePack;
   if (valuePack.data != null) return valuePack.data;
-  throw new RuntimeError("초기화되지 않은 변수를 사용하려고 했습니다.");
+  throw new ChaltteokRuntimeError(
+    "초기화되지 않은 변수를 사용하려고 했습니다."
+  );
 }

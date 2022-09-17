@@ -1,5 +1,9 @@
 import { josa } from "josa";
-import { getConcreteValues, StrictValuePack, Value } from "./values";
+import {
+  getConcreteValues,
+  StrictValuePack,
+  Value,
+} from "../finegrained/values";
 
 export function formatValue(value: Value): string {
   if (typeof value === "boolean") return value ? "참" : "거짓";

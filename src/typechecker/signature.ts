@@ -1,6 +1,5 @@
 /* ****************** SIGNATURE MATCHING ****************** */
 
-import { zip } from "../utils/utils";
 import {
   ConcreteAnnotation,
   ConcreteType,
@@ -11,11 +10,12 @@ import {
   TypeAnnotation,
   TypePack,
   VariableAnnotation,
-} from "./types";
+} from "../finegrained/types";
+import { zip } from "../utils/utils";
 
-import { TypeError } from "../errors";
-import { NewBox, RefBox, StrictValuePack, Value } from "../runner/values";
-import { ConcretePack } from "./types";
+import { InternalError } from "../base/errors";
+import { ConcretePack } from "../finegrained/types";
+import { NewBox, RefBox, StrictValuePack, Value } from "../finegrained/values";
 
 export type Signature = {
   param: TypeAnnotation[];
@@ -158,7 +158,7 @@ export function getType(values: Value[]): ConcretePack;
 export function getType(values: NewBox): "new";
 export function getType(values: RefBox): { variableOf: ConcretePack };
 export function getType(values: StrictValuePack): ConcreteAnnotation | "new" {
-  const err = new TypeError("Internal Error getType");
+  const err = new InternalError("getType");
   if (!Array.isArray(values)) {
     if (values.data == null) return "new";
     return { variableOf: getType(values.data) };

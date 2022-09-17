@@ -1,9 +1,10 @@
 import { Analyzer as YongeonAnalyzer, Eomi, Yongeon } from "eomi-js";
 import { getJosaPicker } from "josa";
 import { Analysis, extractAndProcessNumber } from "kor-to-number";
-import { SyntaxError } from "../errors";
+import { InternalError } from "../base/errors";
+import { POS } from "../base/pos";
+import { IDToken, NumberToken, Token, WordToken } from "../finegrained/tokens";
 import { Trie } from "../utils/trie";
-import { IDToken, NumberToken, POS, Token, WordToken } from "./tokens";
 
 /**
  * 호환용 한글 자모 중 자음을 한글 자모 중 종성으로 변환합니다.
@@ -306,7 +307,7 @@ export class Analyzer {
         this.advAnalyzer.add(word);
         return;
     }
-    throw new SyntaxError("Internal Error Analyzer::add::ILLEGAL_POS " + pos);
+    throw new InternalError("Analyzer::add::ILLEGAL_POS " + pos);
   }
   addAdj(adj: Yongeon) {
     this.adjAnalyzer.addYongeon(adj);
@@ -370,7 +371,6 @@ export function extractSinoNumericLiteral(
     const pos: POS = "명사";
     const token: NumberToken = {
       type: "number",
-      lemma: analysis.consumed,
       native: false,
       number: analysis.parsed,
       pos,
@@ -408,7 +408,6 @@ export function extractNativeNumeralLiteral(
     const pos: POS = "명사"; // TODO
     const token: Token = {
       type: "number",
-      lemma: analysis.consumed,
       native: true,
       number: analysis.parsed,
       pos,
