@@ -5,7 +5,7 @@ import {
   ChaltteokSyntaxError,
   InternalError,
   SourceFile,
-  WithSpan,
+  WithMetadata,
 } from "../base/errors";
 import { VocabEntry } from "../base/pos";
 import { BUILTIN_PATTERNS } from "../builtin/builtin";
@@ -70,14 +70,14 @@ export class Context {
     this.patterns = new IndexedPatterns();
   }
 
-  tokenize(sentence: WithSpan<string>): Token[] {
+  tokenize(sentence: WithMetadata<string>): Token[] {
     return this.substituter.run(tokenize(sentence, this.analyzer));
   }
 
   loadVocab(vocab: VocabEntry): void {
     addVocab(this.analyzer, vocab);
   }
-  loadSynonym(vocab: VocabEntry, synonym: WithSpan<string>): void {
+  loadSynonym(vocab: VocabEntry, synonym: WithMetadata<string>): void {
     const token: Token = {
       type: "word",
       lemma: vocab.lemma.value,
@@ -91,16 +91,16 @@ export class Context {
   }
 }
 
-type Definition = { patterns: WithSpan<string>[]; body: Body };
+type Definition = { patterns: WithMetadata<string>[]; body: Body };
 
 export class Module {
   private readonly context: Context;
   private readonly vocab: VocabEntry[] = [];
-  private readonly synonyms: Record<number, WithSpan<string>> = {};
+  private readonly synonyms: Record<number, WithMetadata<string>> = {};
   private readonly definitions: Definition[] = [];
   private readonly patterns: Pattern[] = [];
   readonly patternLocations: Record<string, Set<number>>;
-  private readonly main: WithSpan<string>[] = [];
+  private readonly main: WithMetadata<string>[] = [];
 
   // pattern -> signature -> procedure
   // looked up at runtime

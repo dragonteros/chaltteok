@@ -1,4 +1,5 @@
-import { ChaltteokSyntaxError, WithSpan } from "../base/errors";
+import { WithMetadata } from "../base/errors";
+import { ChaltteokSyntaxError, WithMetadata } from "../base/errors";
 import { getKeyFromToken, Token } from "../finegrained/tokens";
 import {
   Analyzer,
@@ -6,14 +7,14 @@ import {
   extractSinoNumericLiteral,
 } from "./analyzer";
 
-function _makeSet(items: Token[][]) {
+function _makeSet(items: WithMetadata<Token>[][]) {
   const result = [];
-  const keys: string[] = [];
+  const keys: Set<string> = new Set();
   for (const item of items) {
-    const key = JSON.stringify(item);
-    if (!keys.includes(key)) {
+    const key = JSON.stringify(item.map(token => token.value));
+    if (!keys.has(key)) {
       result.push(item);
-      keys.push(key);
+      keys.add(key);
     }
   }
   return result;
@@ -36,17 +37,17 @@ const isForbidden = (x: string, isFinal: boolean) =>
 
 function tagPOS(
   past: string,
-  current: WithSpan<string>,
+  current: WithMetadata<string>,
   analyzer: Analyzer,
   isFinal: boolean
-): Token[] {
-  let results: Token[][] = [];
+): WithMetadata<Token>[] {
+  let results: WithMetadata<Token>[][] = [];
   const chunk = current.value;
   if (chunk === "." || chunk === ",")
     results.push([{ type: "symbol", symbol: chunk }]);
-  results.push(...analyzer.analyze(chunk));
+  results.push(...analyzer.analyze(current));
 
-  const _result = extractNativeNumeralLiteral(chunk, analyzer);
+  const _result = extractNativeNumeralLiteral(current, analyzer);
   if (_result != null) results.push(..._result);
 
   results = _makeSet(results).filter(
@@ -64,36 +65,34 @@ function tagPOS(
   return results[0];
 }
 
-function tokenize(sentence: WithSpan<string>, analyzer: Analyzer): Token[] {
-  const result: Token[] = [];
+function tokenize(sentence: WithMetadata<string>, analyzer: Analyzer): WithMetadata<Token>[] {
+  const result: WithMetadata<Token>[] = [];
   let past = "";
-  function push(...args: Token[]) {
+  function push(...args: WithMetadata<Token>[]) {
     result.push(...args);
-    past = [past].concat(args.map(getKeyFromToken)).join(" ");
+    past = [past].concat(args.map(arg => arg.value).map(getKeyFromToken)).join(" ");
   }
-  let source = sentence.value
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\(.*?\)/g, "");
-  while (source !== "") {
-    const _result = extractSinoNumericLiteral(source, analyzer);
+  let rest: WithMetadata<string> = sentence;
+  while (rest.value !== "") {
+    const _result = extractSinoNumericLiteral(rest, analyzer);
     if (_result != null) {
       const analyses = _result[0];
-      if (analyses.length !== 1)
+      if (analyses.length !== 1) {
         throw new ChaltteokSyntaxError(
           "구문의 해석이 모호합니다.",
-          sentence.span
+          sentence.span,
         );
-      push(..._result[0][0]);
-      source = _result[1];
+      }
+      push(...analyses[0]);
+      rest = _result[1];
       continue;
     }
 
     const splitPattern = /^([^\s,."]+|[,.]|"[^"]*")\s*(.*)$/;
-    const splitted = source.match(splitPattern);
+    const splitted = rest.value.match(splitPattern);
     if (!splitted) break;
-    source = splitted[2];
-    push(...tagPOS(past, splitted[1], analyzer, source === ""));
+    rest = splitted[2];
+    push(...tagPOS(past, splitted[1], analyzer, rest.value === ""));
   }
   return result;
 }

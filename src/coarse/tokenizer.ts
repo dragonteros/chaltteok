@@ -1,16 +1,17 @@
-import { formatSpan, SourceSpan, WithSpan } from "../base/errors";
+import { SourceFile } from "../base/errors";
+import { formatMetadata, SourceSpan, WithMetadata } from "../base/errors";
 
 // Concatenation should reproduce original
-type JSToken = { type: "JS" } & WithSpan<string>;
-type CommentToken = { type: "Comment" } & WithSpan<string>;
+type JSToken = { type: "JS" } & WithMetadata<string>;
+type CommentToken = { type: "Comment" } & WithMetadata<string>;
 
-type TextToken = { type: "Text" } & WithSpan<string>;
-type Bracket = { type: "Bracket" } & WithSpan<"[" | "]">;
-type SynonymDefToken = { type: "SynonymDef" } & WithSpan<"->">;
-type FunDefToken = { type: "FunDef" } & WithSpan<":">;
-type NewLineToken = { type: "NewLine" } & WithSpan<"\n">;
-type SentenceFinalToken = { type: "SentenceFinal" } & WithSpan<string>;
-type WhitespaceToken = { type: "Whitespace" } & WithSpan<string>;
+type TextToken = { type: "Text" } & WithMetadata<string>;
+type Bracket = { type: "Bracket" } & WithMetadata<"[" | "]">;
+type SynonymDefToken = { type: "SynonymDef" } & WithMetadata<"->">;
+type FunDefToken = { type: "FunDef" } & WithMetadata<":">;
+type NewLineToken = { type: "NewLine" } & WithMetadata<"\n">;
+type SentenceFinalToken = { type: "SentenceFinal" } & WithMetadata<string>;
+type WhitespaceToken = { type: "Whitespace" } & WithMetadata<string>;
 type CoarseToken =
   | JSToken
   | CommentToken
@@ -57,26 +58,27 @@ type CoarseTokenizerInfo = {
 export class CoarseTokenizer {
   chunk = "";
   info: CoarseTokenizerInfo = { cur: 0 };
+  file: SourceFile | undefined;
 
   private intoToken(value: string, span: SourceSpan): CoarseToken {
     if (value === "->") {
-      return { span, type: "SynonymDef", value };
+      return { span, type: "SynonymDef", value, file: this.file };
     } else if (value === "[" || value === "]") {
-      return { span, type: "Bracket", value };
+      return { span, type: "Bracket", value, file: this.file };
     } else if (value === ":") {
-      return { span, type: "FunDef", value };
+      return { span, type: "FunDef", value, file: this.file };
     } else if (value === "\n") {
-      return { span, type: "NewLine", value };
+      return { span, type: "NewLine", value, file: this.file };
     } else if (value.trim() === ".") {
-      return { span, type: "SentenceFinal", value };
+      return { span, type: "SentenceFinal", value, file: this.file };
     } else if (value[0] === "(") {
-      return { span, type: "Comment", value };
+      return { span, type: "Comment", value, file: this.file };
     } else if (value[0] === "{") {
-      return { span, type: "JS", value };
+      return { span, type: "JS", value, file: this.file };
     } else if (value.trim() === "") {
-      return { span, type: "Whitespace", value };
+      return { span, type: "Whitespace", value, file: this.file };
     }
-    return { span, type: "Text", value };
+    return { span, type: "Text", value, file: this.file };
   }
   private consume(): undefined | number | [number, number] {
     if (this.info.cur >= this.chunk.length) return undefined;
@@ -101,10 +103,10 @@ export class CoarseTokenizer {
     const [end, next] =
       typeof consumed === "number" ? [consumed, undefined] : consumed;
 
-    const metadata = { start: this.info.cur, end };
+    const span = { start: this.info.cur, end };
     const token = this.intoToken(
       this.chunk.slice(this.info.cur, end),
-      metadata
+      span
     );
     this.info = { cur: end, next };
     return token;
@@ -117,7 +119,7 @@ export class CoarseTokenizer {
     this.info = info ?? { cur: 0 };
   }
   formatError(token: CoarseToken, message = ""): string {
-    return `${formatSpan(this.chunk, token.span)}
+    return `${formatMetadata(this.file, token.span)}
 ${message}`.trim();
   }
   has(name: string): boolean {

@@ -1,6 +1,7 @@
 import { Eomi, Yongeon } from "eomi-js";
 import nearley from "nearley";
-import { ChaltteokSyntaxError, SourceFile, WithSpan } from "../base/errors";
+import { SourceSpan } from "../base/errors";
+import { ChaltteokSyntaxError, SourceFile, WithMetadata } from "../base/errors";
 import { POS, VocabEntry } from "../base/pos";
 import { CompiledImpl, Processor } from "../finegrained/procedure";
 import { Token } from "../finegrained/tokens";
@@ -14,20 +15,41 @@ import { parseTypeAnnotation } from "../parser/pattern";
 import { Signature } from "../typechecker/signature";
 import grammar from "./grammar";
 import { JSBody, Statement } from "./structure";
+import { CoarseTokenizer } from "./tokenizer";
 
-// export function* parseStructureCoroutine(): Generator<
-//   undefined,
-//   Statement[],
-//   string
-// > {
-//   //
-// }
+export function* parseStructureInteractive(
+): Generator<
+  undefined,
+  Statement[],
+  WithMetadata<string>
+> {
+  const file: SourceFile = { content: '', path: "<stdin>" };
+
+  const localGrammar = nearley.Grammar.fromCompiled(grammar);
+  (localGrammar.lexer as CoarseTokenizer).file = file;
+  const parser = new nearley.Parser(localGrammar);
+
+  let span: SourceSpan | undefined = undefined;
+  do {
+    const line = yield;
+    file.content += line.value;
+    span = span == null ? line.span : { ...span, end: line.span.end };
+
+    parser.feed(line.value);
+    if (parser.results.length > 1) {
+      throw new ChaltteokSyntaxError("구문이 중의적입니다.", file, span);
+    }
+  } while (parser.results.length !== 1);
+  return parser.results[0];
+}
 
 export function parseStructure(
-  program: WithSpan<string>,
+  program: WithMetadata<string>,
   sourceFile: SourceFile
 ): Statement[] {
-  const parser = new nearley.Parser(nearley.Grammar.fromCompiled(grammar));
+  const localGrammar = nearley.Grammar.fromCompiled(grammar);
+  (localGrammar.lexer as CoarseTokenizer).file = sourceFile;
+  const parser = new nearley.Parser(localGrammar);
 
   parser.feed(program.value);
   const results = parser.results;

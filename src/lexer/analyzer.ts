@@ -1,6 +1,7 @@
 import { Analyzer as YongeonAnalyzer, Eomi, Yongeon } from "eomi-js";
 import { getJosaPicker } from "josa";
 import { Analysis, extractAndProcessNumber } from "kor-to-number";
+import { WithMetadata } from "../base/errors";
 import { InternalError } from "../base/errors";
 import { POS } from "../base/pos";
 import { IDToken, NumberToken, Token, WordToken } from "../finegrained/tokens";
@@ -123,7 +124,7 @@ class NounAnalyzer {
     this.addEomi(new Eomi("ㅁ" + josa.realize("임")));
     this.addEomi(new Eomi("기" + josa.realize("기")));
   }
-  analyze(target: string): (WordToken | IDToken)[][] {
+  analyze(target: WithMetadata<string>): WithMetadata<WordToken | IDToken>[][] {
     let candidates: [string, string][];
     const quoteMatch = target.match(/^'([^']+)'([^']*)$/);
     if (quoteMatch) {
@@ -146,7 +147,7 @@ class NounAnalyzer {
     return results;
   }
 
-  _analyze(noun: string, rest: string): WordToken[][] {
+  _analyze(noun: WithMetadata<string>, rest: WithMetadata<string>): WithMetadata<WordToken>[][] {
     const token: WordToken = { type: "word", lemma: noun, pos: "명사" };
     const results: WordToken[][] = [];
     for (const [analysis, _rest] of this._analyzeSuffix(rest)) {
@@ -164,7 +165,7 @@ class NounAnalyzer {
     return results;
   }
 
-  _analyzeSuffix(rest: string): [WordToken[], string][] {
+  _analyzeSuffix(rest: WithMetadata<string>): [WithMetadata<WordToken>[], WithMetadata<string>][] {
     rest = N(rest);
 
     const results: [WordToken[], string][] = [[[], rest]];
@@ -183,22 +184,22 @@ class NounAnalyzer {
     return results;
   }
 
-  _analyzeJosa(consumed: string, rest: string): WordToken[] {
-    const test = /[가-힣]$/.test(consumed)
-      ? (entry: JosaEntry) => N(entry.realize(consumed)) === rest
-      : (entry: JosaEntry) => entry.forms.map(N).includes(rest);
+  _analyzeJosa(consumed: WithMetadata<string>, rest: WithMetadata<string>): WithMetadata<WordToken>[] {
+    const test = /[가-힣]$/.test(consumed.value)
+      ? (entry: JosaEntry) => N(entry.realize(consumed.value)) === rest.value
+      : (entry: JosaEntry) => entry.forms.map(N).includes(rest.value);
     return this.josas
       .filter(test)
       .map((entry) => ({ type: "word", lemma: entry.lemma, pos: "조사" }));
   }
 
-  _analyzeIda(consumed: string, rest: string): WordToken[][] {
+  _analyzeIda(consumed: WithMetadata<string>, rest: WithMetadata<string>): WithMetadata<WordToken>[][] {
     const analyzer =
-      /[가-힣]$/.test(consumed) && endsInJongseong(consumed)
+      /[가-힣]$/.test(consumed.value) && endsInJongseong(consumed.value)
         ? this.idaAnalyzer
         : this.daAnalyzer;
 
-    const results: WordToken[][] = [];
+    const results: WithMetadata<WordToken>[][] = [];
     const visited: string[] = [];
     for (const [, eomi] of analyzer.analyze(rest)) {
       let _eomi = eomi.valueOf();
@@ -211,7 +212,7 @@ class NounAnalyzer {
       else if (_eomi.length > 5 && _eomi.slice(0, 5) === "-(으)ㅁ")
         [_eomi, josa] = [_eomi.slice(0, 5), _eomi.slice(5)];
 
-      const analysis: WordToken[] = [
+      const analysis: WithMetadata<WordToken>[] = [
         { type: "word", lemma: "이다", pos: "조사" },
         { type: "word", lemma: _eomi, pos: "어미" },
       ];
@@ -235,9 +236,10 @@ class SimpleAnalyzer {
   add(word: string) {
     this.words.push(word);
   }
-  analyze(chunk: string): Token[][] {
+  analyze(chunk: WithMetadata<string>): WithMetadata<Token>[][] {
     if (!this.words.includes(chunk)) return [];
-    return [[{ type: "word", lemma: chunk, pos: this.pos }]];
+    const token: Token = { type: "word", lemma: chunk, pos: this.pos };
+    return [[{ ...chunk, value: token }]];
   }
 }
 
@@ -331,8 +333,8 @@ export class Analyzer {
     this.nounAnalyzer.addJosa(josa);
   }
 
-  analyze(chunk: string): Token[][] {
-    const results: Token[][] = [];
+  analyze(chunk: WithMetadata<string>): WithMetadata<Token>[][] {
+    const results: WithMetadata<Token>[][] = [];
     results.push(...this.advAnalyzer.analyze(chunk));
     results.push(...this.detAnalyzer.analyze(chunk));
     results.push(...this.nounAnalyzer.analyze(chunk));
@@ -355,7 +357,7 @@ export class Analyzer {
     return results;
   }
 
-  analyzeSuffix(noun: string, rest: string): WordToken[][] {
+  analyzeSuffix(noun: WithMetadata<string>, rest: WithMetadata<string>): WithMetadata<WordToken>[][] {
     return this.nounAnalyzer._analyze(noun, rest);
   }
 }
@@ -364,9 +366,9 @@ const DENY_LIST = [
   /자\s*$/, // `삼자`를 "삼다v -자e"로 해석하기 위함.
 ];
 export function extractSinoNumericLiteral(
-  sentence: string,
+  sentence: WithMetadata<string>,
   analyzer: Analyzer
-): [Token[][], string] | null {
+): [WithMetadata<Token>[][], string] | null {
   function format(analysis: Analysis): Token {
     const pos: POS = "명사";
     const token: NumberToken = {
@@ -377,7 +379,7 @@ export function extractSinoNumericLiteral(
     };
     return token;
   }
-  function mapper(analysis: Analysis): [Token[][], string] | null {
+  function mapper(analysis: Analysis): [WithMetadata<Token>[][], WithMetadata<string>] | null {
     if (isNaN(analysis.parsed)) return null;
     if (/[.]\s*$/.test(analysis.consumed)) return null;
     if (DENY_LIST.some((deny) => deny.test(analysis.consumed))) return null;
@@ -401,9 +403,9 @@ export function extractSinoNumericLiteral(
 }
 
 export function extractNativeNumeralLiteral(
-  word: string,
+  word: WithMetadata<string>,
   analyzer: Analyzer
-): Token[][] | null {
+): WithMetadata<Token>[][] | null {
   function format(analysis: Analysis): Token {
     const pos: POS = "명사"; // TODO
     const token: Token = {
@@ -414,7 +416,7 @@ export function extractNativeNumeralLiteral(
     };
     return token;
   }
-  function mapper(analysis: Analysis): Token[][] | null {
+  function mapper(analysis: Analysis): WithMetadata<Token>[][] | null {
     if (isNaN(analysis.parsed)) return null;
     if (analysis.parsed < 1 || analysis.parsed >= 100) return null;
     const analyses = analyzer.analyzeSuffix(analysis.consumed, analysis.rest);
@@ -423,5 +425,5 @@ export function extractNativeNumeralLiteral(
     const tokens = analyses.map((x) => [formatted, ...x.slice(1)]);
     return tokens.length ? tokens : null;
   }
-  return extractAndProcessNumber(word.trim(), mapper, ["순우리말"]);
+  return extractAndProcessNumber(word, mapper, ["순우리말"]);
 }

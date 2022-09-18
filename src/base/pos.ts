@@ -1,4 +1,4 @@
-import { WithSpan } from "./errors";
+import { WithMetadata } from "./errors";
 
 /* Use interpreter semantics
 >>> Lorem Ipsum:
@@ -22,7 +22,7 @@ export const POS_PATTERN = PARTS_OF_SPEECH.join("|");
 export type POS = typeof PARTS_OF_SPEECH[number];
 
 export type VocabEntry = {
-  lemma: WithSpan<string>;
-  pos: WithSpan<POS>;
-  extra?: WithSpan<string>;
+  lemma: WithMetadata<string>;
+  pos: WithMetadata<POS>;
+  extra?: WithMetadata<string>;
 };
