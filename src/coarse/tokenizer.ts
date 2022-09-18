@@ -1,4 +1,4 @@
-import { SourceFile } from "../base/errors";
+import { InternalError, SourceFile } from "../base/errors";
 import { formatMetadata, SourceSpan, WithMetadata } from "../base/errors";
 
 // Concatenation should reproduce original
@@ -61,6 +61,7 @@ export class CoarseTokenizer {
   file: SourceFile | undefined;
 
   private intoToken(value: string, span: SourceSpan): CoarseToken {
+    if (this.file == null) throw new InternalError("CoarseTokenizer::intoToken::FILE_NOT_SET");
     if (value === "->") {
       return { span, type: "SynonymDef", value, file: this.file };
     } else if (value === "[" || value === "]") {
@@ -119,6 +120,7 @@ export class CoarseTokenizer {
     this.info = info ?? { cur: 0 };
   }
   formatError(token: CoarseToken, message = ""): string {
+    if (this.file == null) throw new InternalError("CoarseTokenizer::formatError::FILE_NOT_SET");
     return `${formatMetadata(this.file, token.span)}
 ${message}`.trim();
   }

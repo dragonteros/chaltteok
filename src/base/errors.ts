@@ -1,5 +1,6 @@
 import { josa } from "josa";
 import { zip } from "../utils/utils";
+import { mb_strwidth } from "@demouth/mb_strwidth";
 
 export class InternalError extends Error {
   constructor(message: string) {
@@ -17,6 +18,20 @@ export type SourceFile = {
 };
 export type WithMetadata<T> = { file: SourceFile; span: SourceSpan; value: T; };
 
+export function splitSpan(data: WithMetadata<string>, index: number): [WithMetadata<string>, WithMetadata<string>] {
+  return [
+    {
+      ...data,
+      span: { ...data.span, end: data.span.start + index },
+      value: data.value.slice(0, index),
+    },
+    {
+      ...data,
+      span: { ...data.span, start: data.span.start + index },
+      value: data.value.slice(index),
+    }
+  ]
+}
 export function trimSpan(data: WithMetadata<string>): WithMetadata<string> {
   const start = data.value.match(/\S/)?.index ?? 0;
   const end = data.value.match(/\s*$/)?.index ?? data.value.length;
@@ -45,9 +60,9 @@ function formatLines(
     .split("\n");
 
   const underlines: string[] = [
-    before[before.length - 1].replace(/./g, " "),
-    span.map((x) => x.replace(/./g, "^")).join("\n"),
-    after[0].replace(/./g, " "),
+    ' '.repeat(mb_strwidth(before[before.length - 1])),
+    span.map((x) => '^'.repeat(mb_strwidth(x))).join("\n"),
+    "",
   ]
     .join("")
     .split("\n");

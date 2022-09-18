@@ -1,4 +1,4 @@
-import { ChaltteokSyntaxError } from "../base/errors";
+import { ChaltteokSyntaxError, WithMetadata } from "../base/errors";
 import { ConcreteTerm, Tree } from "../finegrained/terms";
 import { getKeyFromToken, Token } from "../finegrained/tokens";
 import { splitArray } from "../utils/utils";
@@ -25,7 +25,7 @@ function phraseOperation(trees: Tree[], patterns: IndexedPatterns): Tree[] {
   return trees;
 }
 
-function parseSentence(tokens: Token[], patterns: IndexedPatterns): Tree {
+function parseSentence(tokens: WithMetadata<Token>[], patterns: IndexedPatterns): Tree {
   const phrases = splitArray(tokens, function (token) {
     if (token.type === "symbol") return null;
     const term: ConcreteTerm = { token, pos: token.pos };

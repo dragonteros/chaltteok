@@ -1,5 +1,4 @@
-import { WithMetadata } from "../base/errors";
-import { ChaltteokSyntaxError, WithMetadata } from "../base/errors";
+import { ChaltteokSyntaxError, splitSpan, trimSpan, WithMetadata } from "../base/errors";
 import { getKeyFromToken, Token } from "../finegrained/tokens";
 import {
   Analyzer,
@@ -44,7 +43,7 @@ function tagPOS(
   let results: WithMetadata<Token>[][] = [];
   const chunk = current.value;
   if (chunk === "." || chunk === ",")
-    results.push([{ type: "symbol", symbol: chunk }]);
+    results.push([{ ...current, value: { type: "symbol", symbol: chunk } }]);
   results.push(...analyzer.analyze(current));
 
   const _result = extractNativeNumeralLiteral(current, analyzer);
@@ -53,15 +52,17 @@ function tagPOS(
   results = _makeSet(results).filter(
     (hypothesis) =>
       !isForbidden(
-        [past].concat(hypothesis.map(getKeyFromToken)).join(" "),
+        [past].concat(hypothesis.map(x => x.value).map(getKeyFromToken)).join(" "),
         isFinal
       )
   );
 
-  if (results.length > 1)
-    throw new ChaltteokSyntaxError("어절의 해석이 모호합니다.", current.span);
-  if (results.length === 0)
-    throw new ChaltteokSyntaxError("어절을 해석할 수 없습니다.", current.span);
+  if (results.length > 1) {
+    throw new ChaltteokSyntaxError("어절의 해석이 모호합니다.", current.file, current.span);
+  }
+  if (results.length === 0) {
+    throw new ChaltteokSyntaxError("어절을 해석할 수 없습니다.", current.file, current.span);
+  }
   return results[0];
 }
 
@@ -79,7 +80,7 @@ function tokenize(sentence: WithMetadata<string>, analyzer: Analyzer): WithMetad
       const analyses = _result[0];
       if (analyses.length !== 1) {
         throw new ChaltteokSyntaxError(
-          "구문의 해석이 모호합니다.",
+          "구문의 해석이 모호합니다.", sentence.file,
           sentence.span,
         );
       }
@@ -88,11 +89,12 @@ function tokenize(sentence: WithMetadata<string>, analyzer: Analyzer): WithMetad
       continue;
     }
 
-    const splitPattern = /^([^\s,."]+|[,.]|"[^"]*")\s*(.*)$/;
+    const splitPattern = /^[^\s,."]+|[,.]|"[^"]*"$/;
     const splitted = rest.value.match(splitPattern);
     if (!splitted) break;
-    rest = splitted[2];
-    push(...tagPOS(past, splitted[1], analyzer, rest.value === ""));
+    const [matched, remaining] = splitSpan(rest, splitted[0].length);
+    rest = trimSpan(remaining);
+    push(...tagPOS(past, matched, analyzer, rest.value === ""));
   }
   return result;
 }

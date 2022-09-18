@@ -109,7 +109,6 @@ export class Module {
 
   constructor(
     public readonly imports: Module[],
-    public readonly sourceFile: SourceFile,
     statements: Statement[]
   ) {
     this.context = this.initContext();
@@ -213,10 +212,7 @@ export class Module {
 
     for (const definition of this.definitions) {
       if (definition.body.type === "JSBody") {
-        const [impl, signature, pos] = parseJS(
-          definition.body,
-          this.sourceFile
-        );
+        const [impl, signature, pos] = parseJS(definition.body);
         const implID = this.registerImpl(impl);
 
         for (const pattern of definition.patterns) {
@@ -442,13 +438,13 @@ class ModuleEnv extends Env {
       x instanceof Thunk
         ? undefined
         : overloaded<
-            Value[],
-            TypePack,
-            RefBox,
-            VariableAnnotation,
-            NewBox,
-            "new"
-          >(getType)(x)
+          Value[],
+          TypePack,
+          RefBox,
+          VariableAnnotation,
+          NewBox,
+          "new"
+        >(getType)(x)
     );
     const antType =
       antecedent &&

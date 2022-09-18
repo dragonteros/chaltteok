@@ -33,7 +33,7 @@ export function* parseStructureInteractive(
   do {
     const line = yield;
     file.content += line.value;
-    span = span == null ? line.span : { ...span, end: line.span.end };
+    span = span == null ? line.span : { start: span.start, end: line.span.end };
 
     parser.feed(line.value);
     if (parser.results.length > 1) {
@@ -44,11 +44,10 @@ export function* parseStructureInteractive(
 }
 
 export function parseStructure(
-  program: WithMetadata<string>,
-  sourceFile: SourceFile
+  program: WithMetadata<string>
 ): Statement[] {
   const localGrammar = nearley.Grammar.fromCompiled(grammar);
-  (localGrammar.lexer as CoarseTokenizer).file = sourceFile;
+  (localGrammar.lexer as CoarseTokenizer).file = program.file;
   const parser = new nearley.Parser(localGrammar);
 
   parser.feed(program.value);
@@ -56,14 +55,14 @@ export function parseStructure(
   if (results.length === 0) {
     throw new ChaltteokSyntaxError(
       "구문을 해석할 수 없습니다.",
-      sourceFile,
+      program.file,
       program.span
     );
   }
   if (results.length > 1) {
     throw new ChaltteokSyntaxError(
       "구문이 중의적입니다.",
-      sourceFile,
+      program.file,
       program.span
     );
   }
@@ -137,7 +136,6 @@ export class Substituter {
 
 export function parseJS(
   body: JSBody,
-  sourceFile: SourceFile
 ): [CompiledImpl, Signature | undefined, POS | undefined] {
   let pos: POS | undefined = undefined;
   let param: TypeAnnotation[] | undefined = undefined;
@@ -155,7 +153,7 @@ export function parseJS(
       if (_type === "new" || _type === "lazy") {
         throw new ChaltteokSyntaxError(
           `선행사 타입 주석으로 ${_type}를 쓸 수 없습니다.`,
-          sourceFile,
+          body.block.file,
           body.block.span
         );
       }

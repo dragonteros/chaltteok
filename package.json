@@ -18,6 +18,7 @@
   },
   "homepage": "https://github.com/dragonteros/chaltteok#readme",
   "dependencies": {
+    "@demouth/mb_strwidth": "^2.0.1",
     "eomi-js": "^0.2.3",
     "josa": "^3.0.1",
     "kor-to-number": "^1.1.5",

@@ -1,5 +1,5 @@
-import { ExprAST } from "./ast";
 import { Env } from "./env";
+import { Tree } from "./terms";
 import { RefBox, Value, ValuePack } from "./values";
 
 export type Processor = (
@@ -7,7 +7,7 @@ export type Processor = (
 ) => (antecedent?: Value[] | RefBox) => ValuePack;
 
 export type CompiledImpl = { type: "compiled"; body: Processor };
-export type ExprImpl = { type: "expr"; body: ExprAST[] };
+export type ExprImpl = { type: "expr"; body: Tree[] };
 export type Impl = CompiledImpl | ExprImpl;
 
 export type Protocol = {
