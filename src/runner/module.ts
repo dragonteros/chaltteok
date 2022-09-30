@@ -1,24 +1,14 @@
-import { ExprAST } from "src/finegrained/ast";
-import { Tree } from "src/finegrained/terms";
 import {
   ChaltteokRuntimeError,
   ChaltteokSyntaxError,
   InternalError,
-  SourceFile,
-  WithMetadata,
 } from "../base/errors";
+import { WithMetadata } from "../base/metadata";
 import { VocabEntry } from "../base/pos";
-import { BUILTIN_PATTERNS } from "../builtin/builtin";
-import { PRELUDE } from "../builtin/prelude";
-import {
-  addVocab,
-  parseJS,
-  parseStructure,
-  Substituter,
-} from "../coarse/aggregator";
 import { Body, Statement } from "../coarse/structure";
 import { Env } from "../finegrained/env";
-import { Impl, Procedure, Protocol } from "../finegrained/procedure";
+import { Action, Impl, Procedure, Protocol } from "../finegrained/procedure";
+import { Tree } from "../finegrained/terms";
 import { Token } from "../finegrained/tokens";
 import { TypePack, VariableAnnotation } from "../finegrained/types";
 import {
@@ -30,19 +20,17 @@ import {
   Value,
   ValuePack,
 } from "../finegrained/values";
-import { Analyzer } from "../lexer/analyzer";
-import { tokenize } from "../lexer/tokenizer";
 import { parse } from "../parser/parser";
 import {
   deriveSignature,
   getPermutedPatterns,
-  IndexedPatterns,
   parsePattern,
   Pattern,
 } from "../parser/pattern";
 import { isMoreSpecificSignature } from "../typechecker/resolver";
 import { getType, matchesSignature, Signature } from "../typechecker/signature";
 import { ListMap, overloaded, zip } from "../utils/utils";
+import { Context, parseJS } from "./aggregator";
 
 function allEqual<T>(collection: T[]): boolean {
   if (collection.length === 0) return true;
@@ -57,38 +45,6 @@ function assertCompatible(signatures: Signature[]): void {
 
 function shouldStrict(signature: Signature): boolean[] {
   return signature.param.map((x) => x !== "lazy");
-}
-
-export class Context {
-  analyzer: Analyzer;
-  substituter: Substituter;
-  patterns: IndexedPatterns;
-
-  constructor() {
-    this.analyzer = new Analyzer();
-    this.substituter = new Substituter();
-    this.patterns = new IndexedPatterns();
-  }
-
-  tokenize(sentence: WithMetadata<string>): Token[] {
-    return this.substituter.run(tokenize(sentence, this.analyzer));
-  }
-
-  loadVocab(vocab: VocabEntry): void {
-    addVocab(this.analyzer, vocab);
-  }
-  loadSynonym(vocab: VocabEntry, synonym: WithMetadata<string>): void {
-    const token: Token = {
-      type: "word",
-      lemma: vocab.lemma.value,
-      pos: vocab.pos.value,
-    };
-    this.substituter.add(token, tokenize(synonym, this.analyzer));
-  }
-
-  loadPattern(pattern: Pattern) {
-    this.patterns.push(pattern);
-  }
 }
 
 type Definition = { patterns: WithMetadata<string>[]; body: Body };
@@ -107,13 +63,7 @@ export class Module {
   private readonly impls: Impl[] = [];
   protected readonly lookup: ListMap<[Signature, number, Protocol | undefined]>;
 
-  constructor(
-    public readonly imports: Module[],
-    statements: Statement[]
-  ) {
-    this.context = this.initContext();
-    this.patternLocations = this.getPatternLocations();
-
+  constructor(public readonly imports: Module[], statements: Statement[]) {
     for (const statement of statements) {
       switch (statement.type) {
         case "Expr":
@@ -138,9 +88,10 @@ export class Module {
           break;
       }
     }
+    this.context = this.initContext();
+    this.patternLocations = this.getPatternLocations();
 
     this.lookup = new ListMap();
-    this.build();
   }
 
   private initContext(): Context {
@@ -205,9 +156,9 @@ export class Module {
     return results;
   }
 
-  protected build(): void {
+  build(): void {
     const tokenized: Array<
-      [Token[], [string, Signature, Protocol | undefined][]]
+      [WithMetadata<Token>[], [string, Signature, Protocol | undefined][]]
     > = [];
 
     for (const definition of this.definitions) {
@@ -255,8 +206,8 @@ export class Module {
     }
 
     for (const [body, expanded] of tokenized) {
-      const _body = parse(body, this.context.patterns);
-      const implID = this.registerImpl({ type: "expr", body: _body });
+      const expr = parse(body, this.context.patterns);
+      const implID = this.registerImpl({ type: "expr", expr: expr });
       for (const [key, sign, protocol] of expanded) {
         this.lookup.get(key).push([sign, implID, protocol]);
       }
@@ -267,10 +218,7 @@ export class Module {
     return this.lookup.get(patternKey).map(([signature, ,]) => signature);
   }
 
-  getProcedure(
-    patternKey: string,
-    signature: Signature
-  ): Procedure | undefined {
+  getAction(patternKey: string, signature: Signature): Action | undefined {
     const match = this.lookup
       .get(patternKey)
       .find(
@@ -279,7 +227,7 @@ export class Module {
       );
     if (match == null) return undefined;
     const [, implID, protocol] = match;
-    return { impl: this.impls[implID], protocol };
+    return { type: "FunCall", fun: { impl: this.impls[implID], protocol } };
   }
 
   /**
@@ -289,17 +237,14 @@ export class Module {
     fun: Procedure,
     args: ValuePack[],
     antecedent?: Value[] | RefBox
-  ): StrictValuePack {
+  ): ValuePack {
     [args, antecedent] = unwrapProtocol(args, antecedent, fun.protocol);
     const env = new ModuleEnv(this, args);
 
-    if (fun.impl.type === "compiled") {
-      const result = fun.impl.body(env)(antecedent);
-      return result instanceof Thunk ? result.strict() : result;
-    }
+    if (fun.impl.type === "compiled") return fun.impl.fun(env)(antecedent);
 
     let value: StrictValuePack = [];
-    for (const expr of fun.impl.body) {
+    for (const expr of fun.impl.expr) {
       const thunk = env.lazy(expr);
       thunk.antecedent = antecedent;
       value = thunk.strict();
@@ -380,18 +325,20 @@ class ModuleEnv extends Env {
     return infos;
   }
 
-  interpret(expr: ExprAST, antecedent?: Value[] | RefBox): ValuePack {
-    const err = new ChaltteokSyntaxError("표현식 해석에 실패했습니다.");
-    if ("index" in expr.head) {
-      return this.getArg(expr.head.index);
-    }
-    if ("token" in expr.head) {
-      if (expr.head.token.type === "id") return this.get(expr.head.token.lemma);
-      if (expr.head.token.type === "number") {
-        const type = Number.isInteger(expr.head.token.number) ? "정수" : "수";
-        return [{ type, 값: expr.head.token.number }];
+  interpret(expr: Tree, antecedent?: Value[] | RefBox): ValuePack {
+    const err = new ChaltteokSyntaxError(
+      "표현식 해석에 실패했습니다.",
+      expr.head.metadata
+    );
+
+    const head = expr.head.value;
+    if ("token" in head) {
+      if (head.token.type === "id") return this.get(head.token.lemma);
+      if (head.token.type === "number") {
+        const type = Number.isInteger(head.token.number) ? "정수" : "수";
+        return [{ type, 값: head.token.number }];
       }
-      throw err; // TODO: arity?
+      throw err;
     }
     const children = expr.children.map((x) => this.lazy(x));
 
@@ -410,41 +357,48 @@ class ModuleEnv extends Env {
       if (!matchesSignature(argTypes, undefined, { param })) throw err;
       return argValues.map(([x]) => x);
     }
-
-    return this.interpretGeneric(expr.key, children, antecedent);
+    try {
+      return this.interpretGeneric(expr.key, children, antecedent);
+    } catch (error) {
+      if (error instanceof ChaltteokRuntimeError) {
+        error.traceback.push(expr.head.metadata);
+      }
+      throw error;
+    }
   }
 
   interpretGeneric(
     key: string,
     args: ValuePack[],
     antecedent?: Value[] | RefBox
-  ): StrictValuePack {
+  ): ValuePack {
     const err = new ChaltteokRuntimeError(
-      "인수의 타입에 맞는 함수를 찾지 못했습니다."
+      "인수의 타입에 맞는 함수를 찾지 못했습니다.",
+      []
     );
 
     const signatureInfos = this.getSignatureInfos(key);
     if (signatureInfos.length === 0) throw err;
-
     assertCompatible(signatureInfos.map(({ signature }) => signature));
-    const children: ValuePack[] = [];
-    for (const [arg, should] of zip(
+
+    const children: ValuePack[] = zip(
       args,
-      Array.from(shouldStrict(signatureInfos[0].signature).values())
-    )) {
-      children.push(should && arg instanceof Thunk ? arg.strict() : arg);
-    }
+      shouldStrict(signatureInfos[0].signature)
+    ).map(([arg, should]) =>
+      should && arg instanceof Thunk ? arg.strict() : arg
+    );
+
     const argTypes = children.map((x) =>
       x instanceof Thunk
         ? undefined
         : overloaded<
-          Value[],
-          TypePack,
-          RefBox,
-          VariableAnnotation,
-          NewBox,
-          "new"
-        >(getType)(x)
+            Value[],
+            TypePack,
+            RefBox,
+            VariableAnnotation,
+            NewBox,
+            "new"
+          >(getType)(x)
     );
     const antType =
       antecedent &&
@@ -459,8 +413,12 @@ class ModuleEnv extends Env {
     const { signature, origin } = matched.reduce((acc, cur) =>
       isMoreSpecificSignature(acc.signature, cur.signature) ? acc : cur
     ); // TODO: error when multiple such minimal ones exist
-    const fun = origin.getProcedure(key, signature);
-    if (fun == null) throw err;
+    const action = origin.getAction(key, signature);
+    if (action == null) throw err;
+    if (action.type === "ArgRef") {
+      return this.getArg(action.index);
+    }
+
     const casted = zip(children, signature.param).map(([child, param]) => {
       if (param === "lazy") return child;
       if (child instanceof Thunk) return child.strict();
@@ -475,43 +433,6 @@ class ModuleEnv extends Env {
       if ("variableOf" in param) return child;
       return unwrap(child);
     });
-    return origin.call(fun, casted, antecedent);
+    return origin.call(action.fun, casted, antecedent);
   }
 }
-
-class PreludeModule extends Module {
-  constructor() {
-    const sourceFile: SourceFile = {
-      path: "prelude", // TODO
-      content: PRELUDE,
-    };
-    const program = parseStructure(
-      { value: PRELUDE, span: { start: 0, end: PRELUDE.length } },
-      sourceFile
-    );
-    super([], sourceFile, program);
-  }
-
-  protected build(): void {
-    for (const [pattern, signature, action] of BUILTIN_PATTERNS) {
-      if (action[0] === "ArgRef" || action[0] === "NumberLiteral") {
-        this.registerPattern(pattern);
-        // TODO
-        continue;
-      }
-      const [actionType, actionValue] = action;
-      const implID = this.registerImpl({ type: "compiled", body: action[1] });
-      for (const [ptn, sign, protocol] of this.expandPatterns(
-        pattern,
-        signature
-      )) {
-        this.registerPattern(ptn);
-        this.lookup.get(ptn.key).push([sign, implID, protocol]);
-      }
-    }
-
-    super.build();
-  }
-}
-
-export const Prelude = new PreludeModule();

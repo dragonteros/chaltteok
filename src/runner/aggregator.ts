@@ -1,73 +1,22 @@
 import { Eomi, Yongeon } from "eomi-js";
-import nearley from "nearley";
-import { SourceSpan } from "../base/errors";
-import { ChaltteokSyntaxError, SourceFile, WithMetadata } from "../base/errors";
+import { ChaltteokSyntaxError } from "../base/errors";
+import { WithMetadata } from "../base/metadata";
 import { POS, VocabEntry } from "../base/pos";
+import { JSBody } from "../coarse/structure";
 import { CompiledImpl, Processor } from "../finegrained/procedure";
-import { Token } from "../finegrained/tokens";
+import { Token, WordToken } from "../finegrained/tokens";
 import {
   TypeAnnotation,
   TypePack,
   VariableAnnotation,
 } from "../finegrained/types";
 import { Analyzer, makeJosa } from "../lexer/analyzer";
-import { parseTypeAnnotation } from "../parser/pattern";
+import { equalWord, parseTypeAnnotation } from "../parser/pattern";
 import { Signature } from "../typechecker/signature";
-import grammar from "./grammar";
-import { JSBody, Statement } from "./structure";
-import { CoarseTokenizer } from "./tokenizer";
 
-export function* parseStructureInteractive(
-): Generator<
-  undefined,
-  Statement[],
-  WithMetadata<string>
-> {
-  const file: SourceFile = { content: '', path: "<stdin>" };
-
-  const localGrammar = nearley.Grammar.fromCompiled(grammar);
-  (localGrammar.lexer as CoarseTokenizer).file = file;
-  const parser = new nearley.Parser(localGrammar);
-
-  let span: SourceSpan | undefined = undefined;
-  do {
-    const line = yield;
-    file.content += line.value;
-    span = span == null ? line.span : { start: span.start, end: line.span.end };
-
-    parser.feed(line.value);
-    if (parser.results.length > 1) {
-      throw new ChaltteokSyntaxError("구문이 중의적입니다.", file, span);
-    }
-  } while (parser.results.length !== 1);
-  return parser.results[0];
-}
-
-export function parseStructure(
-  program: WithMetadata<string>
-): Statement[] {
-  const localGrammar = nearley.Grammar.fromCompiled(grammar);
-  (localGrammar.lexer as CoarseTokenizer).file = program.file;
-  const parser = new nearley.Parser(localGrammar);
-
-  parser.feed(program.value);
-  const results = parser.results;
-  if (results.length === 0) {
-    throw new ChaltteokSyntaxError(
-      "구문을 해석할 수 없습니다.",
-      program.file,
-      program.span
-    );
-  }
-  if (results.length > 1) {
-    throw new ChaltteokSyntaxError(
-      "구문이 중의적입니다.",
-      program.file,
-      program.span
-    );
-  }
-  return results[0];
-}
+import { tokenize } from "../lexer/tokenizer";
+import { Pattern } from "../parser/pattern";
+import { IndexedPatterns } from "../parser/utils";
 
 export function addVocab(analyzer: Analyzer, vocab: VocabEntry): void {
   let lemma = vocab.lemma.value.trim();
@@ -99,7 +48,7 @@ export function addVocab(analyzer: Analyzer, vocab: VocabEntry): void {
       .replace("(아/어)", "어")
       .replace("(어/아)", "어")
       .split("/", 2);
-    analyzer.addEomi(new Eomi(a, b), attachTo);
+    analyzer.addEomi(new Eomi(a.trim(), b?.trim()), attachTo);
   } else if (pos === "조사") {
     const [a, b] = lemma.split("/", 2);
     const word = makeJosa(a, b);
@@ -119,23 +68,61 @@ export class Substituter {
   add(src: Token, trg: Token[]) {
     this.synonyms.push([src, trg]);
   }
-  _runSingle(token: Token): Token[] {
-    if (token.type !== "word") return [token];
+  _runSingle(token: WithMetadata<Token>): WithMetadata<Token>[] {
+    if (token.value.type !== "word") return [token];
     for (const [src, trg] of this.synonyms) {
       if (src.type !== "word") continue;
-      if (src.lemma !== token.lemma) continue;
-      if (src.pos !== token.pos) continue;
-      return trg;
+      if (src.lemma !== token.value.lemma) continue;
+      if (src.pos !== token.value.pos) continue;
+      return trg.map((value) => ({ ...token, value }));
     }
     return [token];
   }
-  run(tokens: Token[]): Token[] {
+  run(tokens: WithMetadata<Token>[]): WithMetadata<Token>[] {
     return tokens.flatMap((token) => this._runSingle(token));
   }
 }
 
+const 다: WordToken = { lemma: "-다", pos: "어미", type: "word" };
+
+export class Context {
+  analyzer: Analyzer;
+  substituter: Substituter;
+  patterns: IndexedPatterns;
+
+  constructor() {
+    this.analyzer = new Analyzer();
+    this.substituter = new Substituter();
+    this.patterns = new IndexedPatterns();
+  }
+
+  tokenize(sentence: WithMetadata<string>): WithMetadata<Token>[] {
+    return this.substituter.run(tokenize(sentence, this.analyzer));
+  }
+
+  loadVocab(vocab: VocabEntry): void {
+    addVocab(this.analyzer, vocab);
+  }
+  loadSynonym(vocab: VocabEntry, synonym: WithMetadata<string>): void {
+    const token: Token = {
+      type: "word",
+      lemma: vocab.lemma.value,
+      pos: vocab.pos.value,
+    };
+    const target = tokenize(synonym, this.analyzer, false).map(
+      (token) => token.value
+    );
+    if (equalWord(target[target.length - 1], 다)) target.pop();
+    this.substituter.add(token, target);
+  }
+
+  loadPattern(pattern: Pattern) {
+    this.patterns.push(pattern);
+  }
+}
+
 export function parseJS(
-  body: JSBody,
+  body: JSBody
 ): [CompiledImpl, Signature | undefined, POS | undefined] {
   let pos: POS | undefined = undefined;
   let param: TypeAnnotation[] | undefined = undefined;
@@ -153,8 +140,7 @@ export function parseJS(
       if (_type === "new" || _type === "lazy") {
         throw new ChaltteokSyntaxError(
           `선행사 타입 주석으로 ${_type}를 쓸 수 없습니다.`,
-          body.block.file,
-          body.block.span
+          body.block.metadata
         );
       }
       antecedent = _type;
@@ -179,7 +165,7 @@ export function parseJS(
     fn(env, dummy, dummy, dummy, () => antecedent)(...env.args);
   const impl: CompiledImpl = {
     type: "compiled",
-    body: processor,
+    fun: processor,
   };
 
   return [impl, signature, pos];

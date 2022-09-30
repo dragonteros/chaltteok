@@ -1,13 +1,10 @@
+import moo from "moo";
 import { ChaltteokSyntaxError, InternalError } from "../base/errors";
+import { mergeMetadata, SourceMetadata, WithMetadata } from "../base/metadata";
 import { POS } from "../base/pos";
 import { Protocol } from "../finegrained/procedure";
 import { getKeyFromTerm, parseTermKey, Term, Tree } from "../finegrained/terms";
-import {
-  getKeyFromToken,
-  NumberToken,
-  Token,
-  WordToken,
-} from "../finegrained/tokens";
+import { getKeyFromToken, Token, WordToken } from "../finegrained/tokens";
 import {
   Type,
   TypeAnnotation,
@@ -15,74 +12,20 @@ import {
   VariableAnnotation,
 } from "../finegrained/types";
 import { Signature } from "../typechecker/signature";
-import { DefaultArray, ListMap } from "../utils/utils.js";
+import { zip } from "../utils/utils.js";
 import { mergeParamTypes } from "./typemerger";
+import { IndexedPatterns, PatternArray } from "./utils";
 
 export class Pattern {
-  input: Term[];
-  output: Term;
   key: string;
-  constructor(input: Term[], output: Term) {
+  constructor(
+    readonly input: Term[],
+    readonly output: Term,
+    readonly definition: SourceMetadata
+  ) {
     this.input = input;
     this.output = output;
     this.key = input.map(getKeyFromTerm).join(" ");
-  }
-}
-// TODO: keep only POS thing and move argument something somewhere else
-
-export class PatternArray {
-  data: DefaultArray<DefaultArray<ListMap<Pattern>>>;
-  constructor(data?: DefaultArray<DefaultArray<ListMap<Pattern>>>) {
-    if (data != null) this.data = data;
-    else {
-      this.data = new DefaultArray<DefaultArray<ListMap<Pattern>>>(
-        () => new DefaultArray(() => new ListMap())
-      );
-    }
-  }
-  add(i: number, pattern: Pattern) {
-    const length = pattern.input.length;
-    this.data
-      .get(i)
-      .get(length - (i + 1))
-      .get(pattern.key)
-      .push(pattern);
-  }
-  sliceBefore(start?: number, end?: number): PatternArray {
-    return new PatternArray(this.data.slice(start, end));
-  }
-  sliceAfter(start?: number, end?: number): PatternArray {
-    return new PatternArray(this.data.map((x) => x.slice(start, end)));
-  }
-  clone(): PatternArray {
-    const data = this.data.map((row) =>
-      row.map((patterns) => patterns.clone())
-    );
-    return new PatternArray(data);
-  }
-  concat(other: PatternArray): PatternArray {
-    const result = this.clone();
-
-    for (let i = 0; i < other.data.length; i++) {
-      if (!other.data.hasValueAt(i)) continue;
-
-      const srcRow = other.data.get(i);
-      const trgRow = result.data.get(i);
-      for (let j = 0; j < srcRow.length; j++) {
-        if (!srcRow.hasValueAt(j)) continue;
-        trgRow.get(j).update(srcRow.get(j));
-      }
-    }
-    return result;
-  }
-  enumerate(): [number, number, Pattern[]][] {
-    const list = this.data.enumerate().flatMap(function ([i, row]) {
-      return row.enumerate().flatMap(function ([j, _map]) {
-        return _map.values().map((x): [number, number, Pattern[]] => [i, j, x]);
-      });
-    });
-    list.reverse();
-    return list;
   }
 }
 
@@ -156,7 +99,11 @@ export function getPermutedPatterns(pattern: Pattern): [Pattern, Protocol][] {
   );
   const argPerm = _swapped(range, swapIdx[0], swapIdx[1]);
   results.push([
-    new Pattern(terms, { pos: pattern.output.pos, hasOmit: false }),
+    new Pattern(
+      terms,
+      { pos: pattern.output.pos, hasOmit: false },
+      pattern.definition
+    ),
     { arguments: argPerm },
   ]);
 
@@ -167,7 +114,11 @@ export function getPermutedPatterns(pattern: Pattern): [Pattern, Protocol][] {
     argPerm.splice(k, 0, null);
 
     results.push([
-      new Pattern(terms, { pos: pattern.output.pos, hasOmit: true }),
+      new Pattern(
+        terms,
+        { pos: pattern.output.pos, hasOmit: true },
+        pattern.definition
+      ),
       { arguments: argPerm },
     ]);
   }
@@ -197,7 +148,7 @@ export function deriveSignature(
 /* 갓 해석된 패턴 -> 패턴의 내부 표현 */
 
 export function parseTypeAnnotation(chunk: string): TypeAnnotation {
-  const err = new InternalError("parseTypeAnnotation::ILLEGAL_FORMAT");
+  const err = new InternalError("parseTypeAnnotation::ILLEGAL_FORMAT " + chunk);
   chunk = chunk.trim();
   if (chunk === "") return { arity: 0, type: "" };
   if (chunk === "new" || chunk === "any" || chunk === "lazy") return chunk;
@@ -208,7 +159,7 @@ export function parseTypeAnnotation(chunk: string): TypeAnnotation {
     return { variableOf };
   }
 
-  const match = chunk.match(/^(\S+) (\S+)$/);
+  const match = chunk.match(/^(\S+)\s+(\S+)$/);
   if (match == null) throw err;
   const [, _arity, _type] = match;
   const atLeast = parseInt(_arity);
@@ -220,55 +171,90 @@ export function parseTypeAnnotation(chunk: string): TypeAnnotation {
   return { arity, type };
 }
 
-const PATTERN_PREPROCESS_RULES: [RegExp, string][] = [
-  [/무엇\[명사\]/g, '"{any}[명사]", '],
-  [/몇\[관형사\]/g, '"{1 수}[고유어수관형사]", '],
-  [/어찌하다\[동사\]/g, '"{any}[동사]", '],
-  [/어떠하다\[형용사\]/g, '"{1 참거짓}[형용사]", '],
-  [/어찌\/어떠하다\[형용사\]/g, '"{any}[동사],{any}[형용사]",'],
-
-  [/어느\[관형사\] 변수\[명사\]/g, '"{any 변수}[명사]", '],
-
-  [/어느\[관형사\] ([^\]]+)\[명사\] 변수\[명사\]/g, '"{1 $1 변수}[명사]", '],
-  [/어느\[관형사\] ([^\]]+)\[명사\]/g, '"{1 $1}[명사]", '],
-
-  [/여러\[관형사\] ([^\]]+)\[명사\] 변수\[명사\]/g, '"{2+ $1 변수}[명사]", '],
-  [/여러\[관형사\] ([^\]]+)\[명사\]/g, '"{2+ $1}[명사]", '],
-
-  [
-    /(\d+)\[고유어수관형사\] ([^\]]+)\[명사\] 변수\[명사\]/g,
-    '"{$1 $2 변수}[명사]", ',
+/* 패턴 정의문 해석 */
+function getLemma(matched: string, index: number): string {
+  const tokens = matched.split("]");
+  return tokens[index].split("[", 2)[0];
+}
+const PATTERN_PREPROCESS_RULES: moo.Rules = {
+  SIMPLE: [
+    { match: "무엇[명사] ", value: (x) => "{any}[명사]" },
+    { match: "몇[명사] ", value: (x) => "{1 정수}[순우리말수사]" },
+    { match: "몇[관형사] ", value: (x) => "{1 정수}[순우리말수관형사]" },
+    { match: "어찌하다[동사] ", value: (x) => "{any}[동사]" },
+    { match: "어떠하다[형용사] ", value: (x) => "{1 참거짓}[형용사]" },
+    {
+      match: "어찌/어떠하다[형용사] ",
+      value: (x) => "{any}[동사],{any}[형용사]",
+    },
   ],
-  [/(\d+)\[고유어수관형사\] ([^\]]+)\[명사\]/g, '"{$1 $2}[명사]", '],
-
-  [/의\/\[조사\]/g, '"의[조사],", '],
-  [/-다\[어미\]$/g, ""],
-  [/(?<!")([^\]]+\])/g, '"$1", '],
-];
+  VARIABLE: [
+    {
+      match: "어느[관형사] 변수[명사] ",
+      value: (x) => "{any 변수}[명사]",
+    },
+    {
+      match: /어느\[관형사\] [^ []+?\[명사\] 변수\[명사\] /,
+      value: (x) => `{1 ${getLemma(x, 1)} 변수}[명사]`,
+    },
+    {
+      match: /여러\[관형사\] [^ []+?\[명사\] 변수\[명사\] /,
+      value: (x) => `{2+ ${getLemma(x, 1)} 변수}[명사]`,
+    },
+  ],
+  CONSTANT: [
+    {
+      match: /어느\[관형사\] [^ []+\[명사\] /,
+      value: (x) => `{1 ${getLemma(x, 1)}}[명사]`,
+    },
+    {
+      match: /여러\[관형사\] [^ []+\[명사\] /,
+      value: (x) => `{2+ ${getLemma(x, 1)}}[명사]`,
+    },
+  ],
+  ARITY: [
+    {
+      match: /\d+\[순우리말수관형사\] [^ []+\[명사\] 변수\[명사\] /,
+      value: (x) => `{${getLemma(x, 0)} ${getLemma(x, 1)} 변수}[명사]`,
+    },
+    {
+      match: /\d+\[순우리말수관형사\] [^ []+\[명사\] /,
+      value: (x) => `{${getLemma(x, 0)} ${getLemma(x, 1)}}[명사]`,
+    },
+  ],
+  OTHER: [
+    { match: "의/[조사] ", value: (x) => ",의[조사]" },
+    { match: /-다\[어미\] $/, value: (x) => "" },
+  ],
+  DEFAULT: /[^\]]+\] /,
+};
 function preprocessPattern(key: string): string[][] {
-  for (const [rule, replacement] of PATTERN_PREPROCESS_RULES) {
-    key = key.replaceAll(rule, replacement);
+  const processor = moo.compile(PATTERN_PREPROCESS_RULES);
+  processor.reset(key + " ");
+
+  const processed: string[][] = [];
+  for (const token of processor) {
+    if (token.value === "") continue;
+    processed.push(token.value.trim().split(","));
   }
-  const chunks: string[] = JSON.parse(`[${key.slice(0, -2)}]`);
-  return chunks.map((chunk) => chunk.split(","));
+  return processed;
 }
 
 export function parsePattern(
-  tokens: Token[],
+  tokens: WithMetadata<Token>[],
   signature?: Signature,
   pos?: POS
 ): [Pattern[], Signature] {
-  const _tokens: (WordToken | NumberToken)[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (token.type === "id" || token.type === "symbol")
-      throw new InternalError(
-        "parsePattern::ILLEGAL_TOKEN " + getKeyFromToken(token)
-      );
-    _tokens.push(token);
-  }
+  const metadata: SourceMetadata = mergeMetadata(
+    ...tokens.map((token) => token.metadata)
+  );
 
-  const chunks = preprocessPattern(tokens.map(getKeyFromToken).join(" "));
+  const chunks = preprocessPattern(
+    tokens
+      .map((token) => token.value)
+      .map(getKeyFromToken)
+      .join(" ")
+  );
   const terms: (Term | null)[][] = chunks.map((chunk) =>
     chunk.map((x) => (x === "" ? null : parseTermKey(x)[0]))
   );
@@ -282,16 +268,12 @@ export function parsePattern(
     let _pos = pos || lastTerm.pos;
     if ("token" in lastTerm && equalWord(lastTerm.token, 이다)) _pos = "형용사";
 
-    return new Pattern(terms, { pos: _pos, hasOmit: false });
+    return new Pattern(terms, { pos: _pos, hasOmit: false }, metadata);
   });
 
-  let param: TypeAnnotation[];
-  try {
-    param = termTypes.map((x, i) => mergeParamTypes(x, signature?.param[i]));
-  } catch (error) {
-    const abbrs = tokens.map(getKeyFromToken).join(" ");
-    throw new ChaltteokSyntaxError(`${error} 패턴: ${abbrs}`);
-  }
+  const param: TypeAnnotation[] = termTypes.map((x, i) =>
+    mergeParamTypes(metadata, x, signature?.param[i])
+  );
   const _signature: Signature = { param, antecedent: signature?.antecedent };
 
   return [patterns, _signature];
@@ -301,9 +283,24 @@ export function equalWord(word1: Token, word2: Token): boolean {
   return getKeyFromToken(word1) === getKeyFromToken(word2);
 }
 
+function _matches(tree: Tree, term: Term): boolean {
+  const head = tree.head.value;
+  if (term.pos !== head.pos) return false;
+  if ("token" in term) {
+    return "token" in head && equalWord(head.token, term.token);
+  }
+  // term is GenericTerm
+  if ("hasOmit" in head) return head.hasOmit === term.hasOmit;
+
+  if (head.token.type === "id") return true;
+  if (head.token.type === "number" && !head.token.native) return true;
+  return false;
+}
+
 const 과: WordToken = { type: "word", lemma: "과", pos: "조사" };
 
-function _is과(term: Term) {
+function _is과(tree: Tree) {
+  const term = tree.head.value;
   return "token" in term && equalWord(term.token, 과);
 }
 
@@ -311,7 +308,7 @@ function _matchAnd(trees: Tree[], i: number): [number, number, Tree[]] | null {
   const focus = trees[i];
   if (focus.key === "~과~") return null;
 
-  if (_is과(focus.head)) {
+  if (_is과(focus)) {
     if (i <= 0 || i >= trees.length - 1) return null;
     const before = _matchAnd(trees.slice(0, i), i - 1);
     if (before == null) return null;
@@ -319,11 +316,10 @@ function _matchAnd(trees: Tree[], i: number): [number, number, Tree[]] | null {
     if (after == null) return null;
     return [before[0], after[1] + (i + 1), before[2].concat(after[2])];
   }
-  if (focus.head.pos !== "명사") return null;
-  if ("token" in focus.head && focus.head.token.type === "word") return null;
+  if (!_matches(focus, { pos: "명사", hasOmit: false })) return null;
 
-  const 과before = i >= 2 && _is과(trees[i - 1].head);
-  const 과after = i < trees.length - 2 && _is과(trees[i + 1].head);
+  const 과before = i >= 2 && _is과(trees[i - 1]);
+  const 과after = i < trees.length - 2 && _is과(trees[i + 1]);
   const before = 과before ? _matchAnd(trees.slice(0, i - 1), i - 2) : null;
   const after = 과after ? _matchAnd(trees.slice(i + 2), 0) : null;
   if (before == null && after == null) return [i, i + 1, [focus]];
@@ -335,62 +331,67 @@ function _matchAnd(trees: Tree[], i: number): [number, number, Tree[]] | null {
   return [bgn, end, children];
 }
 
-export class IndexedPatterns {
-  data: Record<string, PatternArray>;
-  _first: Pattern | null = null; // used for test
-  constructor(data?: Record<string, PatternArray>) {
-    this.data = data || {};
-  }
-  clone(): IndexedPatterns {
-    const data: Record<string, PatternArray> = {};
-    for (const [key, value] of Object.entries(this.data)) {
-      data[key] = value.clone();
-    }
-    return new IndexedPatterns(data);
-  }
-  has(key: string): boolean {
-    return key in this.data;
-  }
-  get(key: string): PatternArray | undefined {
-    return this.data[key];
-  }
-  values() {
-    return Object.values(this.data);
-  }
-  push(...patterns: Pattern[]) {
-    for (const pattern of patterns) {
-      const terms = pattern.input;
-      for (let i = 0; i < terms.length; i++) {
-        const key = getKeyFromTerm(terms[i]);
-        if (this.data[key] == null) this.data[key] = new PatternArray();
-        this.data[key].add(i, pattern);
-      }
-      this._first = this._first || pattern;
-    }
-  }
-}
-
 function getKeysFromTerm(x: Term): string[] {
   const keys: string[] = [getKeyFromTerm(x)];
   if ("token" in x) {
-    if ("number" in x.token || "id" in x.token) {
+    if (x.token.type === "number" || x.token.type === "id") {
       keys.push(getKeyFromTerm({ pos: x.pos, hasOmit: false }));
     }
   }
   return keys;
 }
 
-function _matches(tree: Tree, term: Term): boolean {
-  if (term.pos !== tree.head.pos) return false;
-  if ("token" in term) {
-    return "token" in tree.head && equalWord(tree.head.token, term.token);
-  }
-  // term is GenericTerm
-  if ("hasOmit" in tree.head) return tree.head.hasOmit === term.hasOmit;
+function _matchPattern(
+  trees: Tree[],
+  candidates: PatternArray,
+  i: number
+): [number, number, Tree] | null {
+  const metadata: SourceMetadata = mergeMetadata(
+    ...trees.map((tree) => tree.head.metadata)
+  );
 
-  if (tree.head.token.type === "id") return true;
-  if (tree.head.token.type === "number" && !tree.head.token.native) return true;
-  return false;
+  for (const [precededBy, followedBy, patterns] of candidates.enumerate()) {
+    const [bgn, end] = [i - precededBy, i + 1 + followedBy];
+    const target = trees.slice(bgn, end) as Tree[];
+    const outputs: Record<string, [WithMetadata<Term>, Tree[]]> = {};
+    for (const pattern of patterns) {
+      const input = pattern.input;
+      if (!zip(target, input).every((pair) => _matches(...pair))) continue;
+
+      const children: Tree[] = [];
+      for (let i = 0; i < target.length; i++) {
+        if (!("token" in input[i])) children.push(target[i]);
+      }
+
+      if (!(pattern.key in outputs)) {
+        const head = { metadata, value: pattern.output };
+        outputs[pattern.key] = [head, children];
+      } else {
+        const a = pattern.output.pos;
+        const b = outputs[pattern.key][0].value.pos;
+        if (a !== b) {
+          throw new ChaltteokSyntaxError(
+            `패턴의 품사 ${a}#{가} 앞서 정의한 패턴의 품사 ${b}#{와} 다릅니다.`,
+            pattern.definition
+          );
+        }
+      }
+    }
+    const cands = Object.keys(outputs);
+    if (cands.length === 0) continue;
+    if (cands.length > 1) {
+      const metadata: SourceMetadata = mergeMetadata(
+        ...trees.map((tree) => tree.head.metadata)
+      );
+      throw new ChaltteokSyntaxError(
+        "구문이 여러 가지로 해석될 수 있습니다.",
+        metadata
+      );
+    }
+    const key = cands[0];
+    return [bgn, end, new Tree(...outputs[key], key)]; // Since already sorted
+  }
+  return null;
 }
 
 export function matchPattern(
@@ -407,58 +408,23 @@ export function matchPattern(
     const [bgn, end, children] = _m;
     if (children.length > 1) {
       const head: Term = { pos: "명사", hasOmit: false };
-      const output = new Tree(head, children, "~과~");
+      const metadata: SourceMetadata = mergeMetadata(
+        ...trees.map((tree) => tree.head.metadata)
+      );
+      const output = new Tree({ value: head, metadata }, children, "~과~");
       results.push([bgn + (i - maxBefore), end + (i - maxBefore), output]);
     }
   }
 
   let candidates: PatternArray = new PatternArray();
-  for (const key of getKeysFromTerm(trees[i].head)) {
+  for (const key of getKeysFromTerm(trees[i].head.value)) {
     let entries = patterns.get(key);
     if (!entries) continue;
     entries = entries.sliceBefore(0, maxBefore + 1).sliceAfter(0, maxAfter + 1);
     candidates = candidates.concat(entries);
   }
-
-  for (const [precededBy, followedBy, patterns] of candidates.enumerate()) {
-    const [bgn, end] = [i - precededBy, i + 1 + followedBy];
-    const target = trees.slice(bgn, end) as Tree[];
-    const outputs: Record<string, [Term, Tree[]]> = {};
-    for (const pattern of patterns) {
-      let matched = true;
-      const children: Tree[] = [];
-      const input = pattern.input;
-      for (let i = 0; i < target.length; i++) {
-        if (!_matches(target[i], input[i])) {
-          matched = false;
-          break;
-        }
-        if (!("token" in input[i])) children.push(target[i]);
-      }
-      if (matched) {
-        if (!(pattern.key in outputs)) {
-          outputs[pattern.key] = [pattern.output, children];
-        } else {
-          const a = pattern.output.pos;
-          const b = outputs[pattern.key][0].pos;
-          if (a !== b)
-            throw new ChaltteokSyntaxError(
-              `'${pattern.key}' 꼴의 두 패턴이 품사가 다릅니다: ${a}, ${b}`
-            );
-        }
-      }
-    }
-    const cands = Object.keys(outputs);
-    if (cands.length > 1) {
-      throw new ChaltteokSyntaxError(
-        "패턴 적용이 모호합니다: " + cands.join(", ")
-      );
-    } else if (cands.length === 1) {
-      const key = cands[0];
-      results.push([bgn, end, new Tree(...outputs[key], key)]);
-      break; // Since already sorted
-    }
-  }
+  const result = _matchPattern(trees, candidates, i);
+  if (result != null) results.push(result);
 
   // choose the longest among the earliest
   let minBgn = i + 1;

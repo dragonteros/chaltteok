@@ -9,7 +9,7 @@ export function formatValue(value: Value): string {
   if (typeof value === "boolean") return value ? "참" : "거짓";
   switch (value.type) {
     case "열":
-      return JSON.stringify(value.data.map(formatValue));
+      return "[" + value.data.map(formatValue).join(", ") + "]";
     default:
       return value.값.toString();
   }

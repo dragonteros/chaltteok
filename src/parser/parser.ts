@@ -1,8 +1,10 @@
-import { ChaltteokSyntaxError, WithMetadata } from "../base/errors";
-import { ConcreteTerm, Tree } from "../finegrained/terms";
+import { ChaltteokSyntaxError, InternalError } from "../base/errors";
+import { mergeMetadata, WithMetadata } from "../base/metadata";
+import { ConcreteTerm, getKeyFromTerm, Tree } from "../finegrained/terms";
 import { getKeyFromToken, Token } from "../finegrained/tokens";
-import { splitArray } from "../utils/utils";
-import { IndexedPatterns, matchPattern } from "./pattern";
+import { splitArray, zip } from "../utils/utils";
+import { matchPattern } from "./pattern";
+import { IndexedPatterns } from "./utils";
 
 function phraseOperation(trees: Tree[], patterns: IndexedPatterns): Tree[] {
   trees = trees.slice();
@@ -25,20 +27,38 @@ function phraseOperation(trees: Tree[], patterns: IndexedPatterns): Tree[] {
   return trees;
 }
 
-function parseSentence(tokens: WithMetadata<Token>[], patterns: IndexedPatterns): Tree {
-  const phrases = splitArray(tokens, function (token) {
+function parseSentence(
+  tokens: WithMetadata<Token>[],
+  patterns: IndexedPatterns
+): Tree {
+  if (tokens.length === 0) throw new InternalError("parseSentence::EMPTY");
+  const phrases = splitArray(tokens, function ({ value: token, ...metadata }) {
     if (token.type === "symbol") return null;
     const term: ConcreteTerm = { token, pos: token.pos };
-    return new Tree(term, [], getKeyFromToken(token));
+    return new Tree({ ...metadata, value: term }, [], getKeyFromToken(token));
   });
   if (phrases[0].length === 0) {
-    throw new ChaltteokSyntaxError("문장을 쉼표로 시작할 수 없습니다.");
+    throw new ChaltteokSyntaxError(
+      "문장을 쉼표로 시작할 수 없습니다.",
+      tokens[0].metadata
+    );
   }
   if (phrases[phrases.length - 1].length === 0) {
-    throw new ChaltteokSyntaxError("문장을 쉼표로 끝낼 수 없습니다.");
+    throw new ChaltteokSyntaxError(
+      "문장을 쉼표로 끝낼 수 없습니다.",
+      tokens[tokens.length - 1].metadata
+    );
   }
   if (phrases.some((x) => x.length === 0)) {
-    throw new ChaltteokSyntaxError("둘 이상의 쉼표를 연달아 쓸 수 없습니다.");
+    for (const [a, b] of zip(tokens, tokens.slice(1))) {
+      if (a.value.type === "symbol" && b.value.type === "symbol") {
+        throw new ChaltteokSyntaxError(
+          "둘 이상의 쉼표를 연달아 쓸 수 없습니다.",
+          mergeMetadata(a.metadata, b.metadata)
+        );
+      }
+    }
+    throw new InternalError("parseSentence::CONSECUTIVE_COMMA_NOT_FOUND");
   }
 
   for (let i = 1; i < phrases.length; i += 2) {
@@ -47,26 +67,28 @@ function parseSentence(tokens: WithMetadata<Token>[], patterns: IndexedPatterns)
   const result = phraseOperation(phrases.flat(), patterns);
 
   if (result.length !== 1) {
+    const wantedPattern = result
+      .map((x) => getKeyFromTerm(x.head.value))
+      .join(" ");
     throw new ChaltteokSyntaxError(
-      `구문이 올바르지 않습니다: ${tokens.map(getKeyFromToken).join(" ")}`
+      `"${wantedPattern}"#{이?}라는 구문을 이해하지 못했습니다.`,
+      mergeMetadata(...tokens.map((token) => token.metadata))
     );
   }
-  const expr = result[0];
-  if ("pos" in expr) {
-    throw new ChaltteokSyntaxError(
-      `구문이 올바르지 않습니다: ${tokens.map(getKeyFromToken).join(" ")}`
-    );
-  }
-  return expr;
+  return result[0];
 }
 
-export function parse(tokens: Token[], patterns: IndexedPatterns): Tree[] {
+export function parse(
+  tokens: WithMetadata<Token>[],
+  patterns: IndexedPatterns
+): Tree[] {
   const sentences = splitArray(tokens, (token) =>
-    token.type === "symbol" && token.symbol === "." ? null : token
+    token.value.type === "symbol" && token.value.symbol === "." ? null : token
   );
   if (sentences[sentences.length - 1].length > 0) {
     throw new ChaltteokSyntaxError(
-      `구문이 마침표로 끝나야 합니다: ${tokens.map(getKeyFromToken).join(" ")}`
+      "구문이 마침표로 끝나야 합니다.",
+      tokens[tokens.length - 1].metadata
     );
   }
   return sentences

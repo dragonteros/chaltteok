@@ -1,4 +1,5 @@
-import { InternalError, WithMetadata } from "../base/errors";
+import { InternalError } from "../base/errors";
+import { WithMetadata } from "../base/metadata";
 import { POS } from "../base/pos";
 import { getKeyFromToken, restoreTokenFromKey, Token } from "./tokens";
 
@@ -17,11 +18,11 @@ export function parseTermKey(key: string): [Term, string] {
 
   const complex = key.match(/^\{([^{}]*)\}(\w*)\[([^{}\[\]]+)\]$/);
   if (complex == null)
-    throw new InternalError("restoreTermFromKey::WRONG_FORMAT");
-  const [main, sub, pos] = complex;
+    throw new InternalError("restoreTermFromKey::WRONG_FORMAT " + key);
+  const [, main, sub, pos] = complex;
 
   if (sub && sub !== "x")
-    throw new InternalError("restoreTermFromKey::WRONG_FORMAT");
+    throw new InternalError("restoreTermFromKey::WRONG_FORMAT " + key);
   return [{ hasOmit: !!sub, pos: pos as any }, main];
 }
 

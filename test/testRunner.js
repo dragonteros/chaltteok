@@ -9,7 +9,7 @@ function assertInterpret(
   // , stdout = ""
 ) {
   try {
-    assert.deepStrictEqual(run(original), expected);
+    assert.deepStrictEqual(run(original, "<test>"), expected);
   } catch (err) {
     console.error(`"${original}"을 실행하는 중 다음 오류가 발생했습니다:`);
     throw err;
@@ -200,11 +200,13 @@ describe("참거짓", function () {
   });
   it("논리 연산", function () {
     assertInterpret(
-      "1을 '변수'라고 하자. '변수'가 5보다 크고 10보다 작으면 10 아니면 0을 -5와 더한다.",
+      `1을 '변수'라고 하자.
+'변수'가 5보다 크고 '변수'가 10보다 작으면 10 아니면 0을 -5와 더한다.`,
       "-5"
     );
     assertInterpret(
-      "1을 '변수'라고 하자. '변수'가 5보다 작거나 10보다 크면 10 아니면 0을 -5와 더한다.",
+      `1을 '변수'라고 하자.
+'변수'가 5보다 작거나 '변수'가 10보다 크면 10 아니면 0을 -5와 더한다.`,
       "5"
     );
   });
@@ -216,12 +218,12 @@ describe("명령형", function () {
   });
   it("변수 선언", function () {
     let defs = `
-      1을 '초깃값'으로 삼는다.
-      마이너스 이를 '차분'으로 두자.`;
+  1을 '초깃값'으로 삼는다.
+  마이너스 이를 '차분'으로 두자.`;
     assertInterpret(defs + "'초깃값'과 '차분'의 합.", "-1");
     defs += `
-    '초깃값'과 '차분'의 합이 '현재값'이 된다.
-    '현재값'과 '차분'의 합이 '현재값'이 된다.
+'초깃값'과 '차분'의 합이 '현재값'이 된다.
+'현재값'과 '차분'의 합이 '현재값'이 된다.
     `;
     assertInterpret(defs + "'현재값'.", "-3");
   });
@@ -301,8 +303,7 @@ describe("함수", function () {
     const defs = `
       비슷하다 [형용사] 비슷하여/비슷해, 비슷하니
       두 수가 비슷하다:
-        앞의 것의 차가 일억분의 일보다 작다. (TODO: 두 수의 차가 ~)
-
+        두 수의 차가 일억분의 일보다 작다.  (TODO: assert [2 수, ])
       `;
     assertInterpret(defs + "1e-8과 1.1e-8이 비슷하다.", "참"); // TODO: ~는
     assertInterpret(defs + "1e-7과 1.1e-7이 비슷하다.", "거짓");

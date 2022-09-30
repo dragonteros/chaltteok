@@ -1,4 +1,4 @@
-import { WithMetadata } from "../base/errors";
+import { WithMetadata } from "../base/metadata";
 import { VocabEntry } from "../base/pos";
 
 // Get as much as possible without runtime tokenization & parsing

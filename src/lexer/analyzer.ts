@@ -1,11 +1,16 @@
 import { Analyzer as YongeonAnalyzer, Eomi, Yongeon } from "eomi-js";
 import { getJosaPicker } from "josa";
 import { Analysis, extractAndProcessNumber } from "kor-to-number";
-import { splitSpan, trimSpan, WithMetadata } from "../base/errors";
 import { InternalError } from "../base/errors";
+import {
+  splitStringWithMetadata,
+  trimStringWithMetadata,
+  WithMetadata,
+} from "../base/metadata";
 import { POS } from "../base/pos";
 import { IDToken, NumberToken, Token, WordToken } from "../finegrained/tokens";
 import { Trie } from "../utils/trie";
+import { range } from "../utils/utils";
 
 /**
  * 호환용 한글 자모 중 자음을 한글 자모 중 종성으로 변환합니다.
@@ -27,7 +32,7 @@ function compatToJongseong(x: string) {
  * @param x 한글 문자열. 음절 또는 자모로 구성됩니다.
  */
 function N(x: string) {
-  return x.split("").map(compatToJongseong).join("").normalize("NFD");
+  return [...x].map(compatToJongseong).join("").normalize("NFD");
 }
 
 type JosaEntry = {
@@ -64,48 +69,72 @@ export function makeJosa(
 
 class HangulChunk {
   readonly internal: string;
+  private mapping?: [number, number][]; // internal index -> [external index, offset]
   constructor(
-    readonly external: WithMetadata<string>,
+    readonly external: WithMetadata<string>, // may not be NFC!!
     private readonly numJamoBefore: number = 0,
-    private readonly numJamoAfter: number = 0,
+    private readonly numJamoAfter: number = 0
   ) {
     const decomposed = N(external.value);
-    this.internal = decomposed.slice(numJamoAfter, decomposed.length - numJamoAfter);
-  };
+    this.internal = decomposed.slice(
+      numJamoAfter,
+      decomposed.length - numJamoAfter
+    );
+  }
 
   splitAtExternalIndex(index: number): [HangulChunk, HangulChunk] {
     if (index < 0) index = this.external.value.length + index;
-    const [first, second] = splitSpan(this.external, index);
+
+    const [first, second] = splitStringWithMetadata(this.external, index);
+
+    if (first.value.length === 0) return [new HangulChunk(first), this];
+    if (second.value.length === 0) return [this, new HangulChunk(second)];
+
     return [
       new HangulChunk(first, this.numJamoBefore),
       new HangulChunk(second, 0, this.numJamoAfter),
-    ]
+    ];
   }
 
   splitAtInternalIndex(index: number): [HangulChunk, HangulChunk] {
     if (index < 0) index = this.internal.length + index;
     const decomposed = N(this.external.value);
+    const decomposedIndex = this.numJamoBefore + index;
 
-    const supposedFirst = decomposed.slice(0, this.numJamoBefore + index).normalize('NFC');
-    const isCleanSplit = this.external.value.startsWith(supposedFirst);
+    if (decomposedIndex === 0) return this.splitAtExternalIndex(0);
+    if (decomposedIndex >= decomposed.length - this.numJamoAfter)
+      return this.splitAtExternalIndex(this.external.value.length);
 
-    const firstEnd = supposedFirst.length;
-    const secondStart = firstEnd - (isCleanSplit ? 0 : 1);
-    const first = this.external.value.slice(0, firstEnd);
-    const second = this.external.value.slice(secondStart);
+    const mapping = this.getMapping();
+    const [externalIndex, behind] = mapping[index];
+    const ahead = behind
+      ? this.external.value[externalIndex].length - behind
+      : 0;
+
+    const splitted = splitStringWithMetadata(this.external, externalIndex);
+    const after = splitted[1];
+    let before = splitted[0];
+    if (behind) {
+      before = splitStringWithMetadata(this.external, externalIndex + 1)[0];
+    }
 
     return [
-      new HangulChunk({
-        file: this.external.file,
-        'span': { ...this.external.span, end: this.external.span.start + firstEnd },
-        value: first,
-      }, this.numJamoBefore, N(first).length - (this.numJamoBefore + index)),
-      new HangulChunk({
-        file: this.external.file,
-        span: { ...this.external.span, start: this.external.span.start + secondStart },
-        value: second,
-      }, this.numJamoBefore + index + N(second).length - decomposed.length, this.numJamoAfter),
-    ]
+      new HangulChunk(before, this.numJamoBefore, behind),
+      new HangulChunk(after, ahead, this.numJamoAfter),
+    ];
+  }
+
+  private getMapping(): [number, number][] {
+    if (this.mapping == null) {
+      this.mapping = [];
+      for (const [i, c] of [...this.external.value].entries()) {
+        const decomposed = c.normalize("NFD");
+        for (const j of range(decomposed.length)) {
+          this.mapping.push([i, j]);
+        }
+      }
+    }
+    return this.mapping;
   }
 }
 
@@ -173,22 +202,18 @@ class NounAnalyzer {
   }
 
   analyze(target: WithMetadata<string>): WithMetadata<WordToken | IDToken>[][] {
+    const chunk = new HangulChunk(target);
     let candidates: [HangulChunk, HangulChunk][];
-    const quoteMatch = target.value.match(/^'([^']+)'([^']*)$/);
+    const quoteMatch = target.value.match(/^'[^']+'/);
     if (quoteMatch) {
-      const [, name, suffix] = quoteMatch
-      candidates = [[new HangulChunk({
-        ...target,
-        span: { start: target.span.start + 1, end: target.span.start + 1 + name.length },
-        value: name,
-      }), new HangulChunk({
-        ...target,
-        span: { ...target.span, start: target.span.end - suffix.length },
-        value: suffix,
-      })]];
+      const [a, b] = chunk.splitAtExternalIndex(quoteMatch[0].length - 1);
+      const [, name] = a.splitAtExternalIndex(1);
+      const [, suffix] = b.splitAtExternalIndex(1);
+      candidates = [[name, suffix]];
     } else {
-      const chunk = new HangulChunk(target);
-      candidates = this.nouns.allPrefixes(chunk.internal).map(([noun]) => chunk.splitAtInternalIndex(noun.length));
+      candidates = this.nouns
+        .allPrefixes(chunk.internal)
+        .map(([noun]) => chunk.splitAtInternalIndex(N(noun).length));
     }
     const results: WithMetadata<WordToken | IDToken>[][] = [];
     for (const [noun, rest] of candidates) {
@@ -218,7 +243,7 @@ class NounAnalyzer {
         continue;
       }
 
-      const [consumed] = rest.splitAtInternalIndex(- _rest.internal.length);
+      const [consumed] = rest.splitAtInternalIndex(-_rest.internal.length);
       for (const _josa of this._analyzeJosa(consumed, _rest)) {
         results.push(_analysis.concat([_josa]));
       }
@@ -229,7 +254,9 @@ class NounAnalyzer {
     return results;
   }
 
-  private _analyzeSuffix(rest: HangulChunk): [WithMetadata<WordToken>[], HangulChunk][] {
+  private _analyzeSuffix(
+    rest: HangulChunk
+  ): [WithMetadata<WordToken>[], HangulChunk][] {
     const results: [WithMetadata<WordToken>[], HangulChunk][] = [[[], rest]];
     if (!rest.internal.length) return results;
 
@@ -239,8 +266,13 @@ class NounAnalyzer {
       const analyses = this._analyzeSuffix(remaining);
       for (const [analysis, _rest] of analyses) {
         results.push([
-          [{ ...match.external, value: { type: "word", lemma: suffix, pos: "접미사" } },
-          ...analysis],
+          [
+            {
+              ...match.external,
+              value: { type: "word", lemma: suffix, pos: "접미사" },
+            },
+            ...analysis,
+          ],
           _rest,
         ]);
       }
@@ -248,23 +280,27 @@ class NounAnalyzer {
     return results;
   }
 
-  private _analyzeJosa(consumed: HangulChunk, rest: HangulChunk): WithMetadata<WordToken>[] {
-    const test = /[\u1100-\u11FF]$/.test(consumed.internal)  /* Hangul */
-      ? (entry: JosaEntry) => N(entry.realize(consumed.internal.normalize('NFC'))) === rest.internal
+  private _analyzeJosa(
+    consumed: HangulChunk,
+    rest: HangulChunk
+  ): WithMetadata<WordToken>[] {
+    const test = /[\u1100-\u11FF]$/.test(consumed.internal) /* Hangul */
+      ? (entry: JosaEntry) =>
+          N(entry.realize(consumed.internal.normalize("NFC"))) === rest.internal
       : (entry: JosaEntry) => entry.forms.map(N).includes(rest.internal);
-    return this.josas
-      .filter(test)
-      .map((entry) => ({
-        ...rest.external,
-        value: { type: "word", lemma: entry.lemma, pos: "조사" },
-      }));
+    return this.josas.filter(test).map((entry) => ({
+      ...rest.external,
+      value: { type: "word", lemma: entry.lemma, pos: "조사" },
+    }));
   }
 
-  private _analyzeIda(consumed: HangulChunk, rest: HangulChunk): WithMetadata<WordToken>[][] {
-    const analyzer =
-      /[\u11A8-\u11FF]$/.test(consumed.internal) /* Jongseong */
-        ? this.idaAnalyzer
-        : this.daAnalyzer;
+  private _analyzeIda(
+    consumed: HangulChunk,
+    rest: HangulChunk
+  ): WithMetadata<WordToken>[][] {
+    const analyzer = /[\u11A8-\u11FF]$/.test(consumed.internal) /* Jongseong */
+      ? this.idaAnalyzer
+      : this.daAnalyzer;
 
     const results: WithMetadata<WordToken>[][] = [];
     const visited: Set<string> = new Set();
@@ -283,13 +319,17 @@ class NounAnalyzer {
       const analysis: WithMetadata<WordToken>[] = [
         {
           ...rest.external,
-          span: { ...rest.external.span, end: rest.external.span.start + 1 },
           value: { type: "word", lemma: "이다", pos: "조사" },
         },
-        { ...rest.external, value: { type: "word", lemma: _eomi, pos: "어미" } },
+        {
+          ...rest.external,
+          value: { type: "word", lemma: _eomi, pos: "어미" },
+        },
       ];
       if (josa) {
-        analysis.push(...this._analyzeJosa(...rest.splitAtExternalIndex(-josa.length)));
+        analysis.push(
+          ...this._analyzeJosa(...rest.splitAtExternalIndex(-josa.length))
+        );
       }
       results.push(analysis);
     }
@@ -424,15 +464,24 @@ export class Analyzer {
       for (const [stem, eomi] of analyzer.analyze(chunk.value)) {
         results.push([
           { ...chunk, value: { type: "word", lemma: stem.valueOf(), pos } },
-          { ...chunk, value: { type: "word", lemma: eomi.valueOf(), pos: "어미" } },
+          {
+            ...chunk,
+            value: { type: "word", lemma: eomi.valueOf(), pos: "어미" },
+          },
         ]);
       }
     }
     return results;
   }
 
-  analyzeSuffix(noun: WithMetadata<string>, rest: WithMetadata<string>): WithMetadata<WordToken>[][] {
-    return this.nounAnalyzer._analyze(new HangulChunk(noun), new HangulChunk(rest));
+  analyzeSuffix(
+    noun: WithMetadata<string>,
+    rest: WithMetadata<string>
+  ): WithMetadata<WordToken>[][] {
+    return this.nounAnalyzer._analyze(
+      new HangulChunk(noun),
+      new HangulChunk(rest)
+    );
   }
 }
 
@@ -443,7 +492,9 @@ export function extractSinoNumericLiteral(
   sentence: WithMetadata<string>,
   analyzer: Analyzer
 ): [WithMetadata<Token>[][], WithMetadata<string>] | null {
-  function format(analysis: Analysis): [WithMetadata<Token>, WithMetadata<string>] {
+  function format(
+    analysis: Analysis
+  ): [WithMetadata<Token>, WithMetadata<string>] {
     const pos: POS = "명사";
     const token: NumberToken = {
       type: "number",
@@ -451,10 +502,15 @@ export function extractSinoNumericLiteral(
       number: analysis.parsed,
       pos,
     };
-    const [match, rest] = splitSpan(sentence, analysis.consumed.length);
-    return [{ ...match, value: token }, trimSpan(rest)];
+    const [match, rest] = splitStringWithMetadata(
+      sentence,
+      analysis.consumed.length
+    );
+    return [{ ...match, value: token }, trimStringWithMetadata(rest)];
   }
-  function mapper(analysis: Analysis): [WithMetadata<Token>[][], WithMetadata<string>] | null {
+  function mapper(
+    analysis: Analysis
+  ): [WithMetadata<Token>[][], WithMetadata<string>] | null {
     if (isNaN(analysis.parsed)) return null;
     if (/[.]\s*$/.test(analysis.consumed)) return null;
     if (DENY_LIST.some((deny) => deny.test(analysis.consumed))) return null;
@@ -464,17 +520,20 @@ export function extractSinoNumericLiteral(
       return [[[formatted]], remaining];
     }
 
-    const match = remaining.value.match(/^[^\s.,"]+$/);
+    const match = remaining.value.match(/^[^\s.,"]+/);
     if (!match) return null;
-    const [suffix, rest] = splitSpan(remaining, match[0].length);
+    const [suffix, rest] = splitStringWithMetadata(remaining, match[0].length);
     const analyses = analyzer.analyzeSuffix(
-      { ...formatted, value: analysis.consumed, },
+      { ...formatted, value: analysis.consumed },
       suffix
     );
     if (!analyses.length) return null;
 
-    const tokens: WithMetadata<Token>[][] = analyses.map((x) => [formatted, ...x.slice(1)]);
-    return [tokens, rest];
+    const tokens: WithMetadata<Token>[][] = analyses.map((x) => [
+      formatted,
+      ...x.slice(1),
+    ]);
+    return [tokens, trimStringWithMetadata(rest)];
   }
   return extractAndProcessNumber(sentence.value, mapper, [
     "숫자",
@@ -487,32 +546,51 @@ export function extractNativeNumeralLiteral(
   word: WithMetadata<string>,
   analyzer: Analyzer
 ): WithMetadata<Token>[][] | null {
-  function format(analysis: Analysis): [WithMetadata<Token>, WithMetadata<string>] {
-    const pos: POS = "명사"; // TODO
-    const token: Token = {
-      type: "number",
-      native: true,
-      number: analysis.parsed,
-      pos,
-    };
-    const [match, rest] = splitSpan(word, analysis.consumed.length);
-    return [{ ...match, value: token }, trimSpan(rest)];
+  function getPOSs(analysis: Analysis): ("관형사" | "명사")[] {
+    const noun = /하나$|[둘셋넷]$|스물$/;
+    const determiner = /[한두세서석네너넉닷대엿]$|스무$/;
+    let maybeDet = true;
+    let maybeNoun = true;
+    if (analysis.rest !== "") maybeDet = false;
+    if (noun.test(analysis.consumed)) maybeDet = false;
+    else if (determiner.test(analysis.consumed)) maybeNoun = false;
+
+    const POSs: ("관형사" | "명사")[] = [];
+    if (maybeDet) POSs.push("관형사");
+    if (maybeNoun) POSs.push("명사");
+    return POSs;
+  }
+  function format(
+    analysis: Analysis
+  ): [WithMetadata<Token>[], WithMetadata<string>] {
+    const POSs = getPOSs(analysis);
+    const [match, rest] = splitStringWithMetadata(
+      word,
+      analysis.consumed.length
+    );
+    const candidates: WithMetadata<Token>[] = POSs.map((pos) => ({
+      ...match,
+      value: {
+        type: "number",
+        native: true,
+        number: analysis.parsed,
+        pos,
+      },
+    }));
+    return [candidates, trimStringWithMetadata(rest)];
   }
   function mapper(analysis: Analysis): WithMetadata<Token>[][] | null {
     if (isNaN(analysis.parsed)) return null;
     if (analysis.parsed < 1 || analysis.parsed >= 100) return null;
 
     const [formatted, rest] = format(analysis);
-    const analyses = analyzer.analyzeSuffix(
-      {
-        ...formatted,
-        value: analysis.consumed,
-      }, rest
-    );
-    if (!analyses.length) return null;
-
-    const tokens = analyses.map((x) => [formatted, ...x.slice(1)]);
-    return tokens.length ? tokens : null;
+    const candidates: WithMetadata<Token>[][] = [];
+    for (const candidate of formatted) {
+      const consumed = { ...candidate, value: analysis.consumed };
+      const analyses = analyzer.analyzeSuffix(consumed, rest);
+      candidates.push(...analyses.map((x) => [candidate, ...x.slice(1)]));
+    }
+    return candidates.length ? candidates : null;
   }
   return extractAndProcessNumber(word.value, mapper, ["순우리말"]);
 }

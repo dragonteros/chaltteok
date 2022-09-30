@@ -1,11 +1,4 @@
-import { WithMetadata } from "./errors";
-
-/* Use interpreter semantics
->>> Lorem Ipsum:
-...   Dolor sit amet.
-...
->>> # AST is generated
-*/
+import { WithMetadata } from "./metadata";
 
 export const PARTS_OF_SPEECH = [
   "명사",

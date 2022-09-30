@@ -6,19 +6,15 @@ export type Processor = (
   env: Env
 ) => (antecedent?: Value[] | RefBox) => ValuePack;
 
-export type CompiledImpl = { type: "compiled"; body: Processor };
-export type ExprImpl = { type: "expr"; body: Tree[] };
+export type CompiledImpl = { type: "compiled"; fun: Processor };
+export type ExprImpl = { type: "expr"; expr: Tree[] };
 export type Impl = CompiledImpl | ExprImpl;
 
 export type Protocol = {
   arguments: (number | null)[]; // null means antecedent
 };
-export type JSProcedure = {
-  impl: CompiledImpl;
-  protocol?: Protocol;
-};
-export type ChaltteokProcedure = {
-  impl: ExprImpl;
-  protocol?: Protocol;
-};
-export type Procedure = JSProcedure | ChaltteokProcedure;
+export type Procedure = { impl: Impl; protocol?: Protocol };
+
+export type Action =
+  | { type: "FunCall"; fun: Procedure }
+  | { type: "ArgRef"; index: number };

@@ -1,5 +1,6 @@
 import { InternalError } from "../base/errors";
-import { Processor } from "../finegrained/procedure";
+import { SourceFile, SourceMetadata } from "../base/metadata";
+import { Action, Procedure, Processor } from "../finegrained/procedure";
 import { ConcreteTerm, GenericTerm, parseTermKey } from "../finegrained/terms";
 import { PRIMITIVE_TYPES, TypeAnnotation } from "../finegrained/types";
 import {
@@ -24,19 +25,20 @@ export function equal(x: Value, y: Value): boolean {
   return false;
 }
 
-const pure = function (g: (...args: Value[][]) => Value[]): Processor {
-  return (env) => () => g(...env.args.map(assertStrict).map(getConcreteValues));
+const intoProcedure = (fun: Processor): Procedure => ({
+  impl: { type: "compiled", fun },
+});
+const pure = function (g: (...args: Value[][]) => Value[]): Procedure {
+  return intoProcedure(
+    (env) => () => g(...env.args.map(assertStrict).map(getConcreteValues))
+  );
 };
-const id: Processor = (env) => () => env.args[0];
-const seq: Processor = (env) => () => {
+const id: Procedure = intoProcedure((env) => () => env.args[0]);
+const seq: Procedure = intoProcedure((env) => () => {
   const [x, y] = env.args;
   if (y instanceof Thunk) y.antecedent = assertStrict(x) as any;
   return y;
-};
-
-export type Action =
-  | { type: "FunCall"; fun: Processor }
-  | { type: "ArgRef"; index: number };
+});
 
 const _BUILTIN_PATTERN: Record<string, Action> = {
   "{1 T}[명사] 가[조사] {1 T}[명사] 이다[조사] -> {}[형용사]": {
@@ -74,9 +76,9 @@ const _BUILTIN_GENERIC_PATTERN = Object.entries({
   "해당[관형사] T[명사] -> {}[명사]": 0,
   "앞[명사] 의[조사] T[명사] -> {}[명사]": 0,
   "뒤[명사] 의[조사] T[명사] -> {}[명사]": 1,
-  "2[고유어수관형사] T[명사] -> {}[명사]": 0,
-  "3[고유어수관형사] T[명사] -> {}[명사]": 0,
-  "4[고유어수관형사] T[명사] -> {인수0}[명사]": 0,
+  "2[순우리말수관형사] T[명사] -> {}[명사]": 0,
+  "3[순우리말수관형사] T[명사] -> {}[명사]": 0,
+  "4[순우리말수관형사] T[명사] -> {}[명사]": 0,
 }).flatMap(([x, index]) =>
   PRIMITIVE_TYPES.map((T): [string, Action] => [
     x.replaceAll("T", T),
@@ -87,7 +89,7 @@ const _BUILTIN_GENERIC_PATTERN = Object.entries({
 function _parseTerm(
   chunk: string
 ): [ConcreteTerm, null] | [GenericTerm, TypeAnnotation] {
-  const [term, annotation] = parseTermKey(chunk);
+  const [term, annotation] = parseTermKey(chunk.trim());
   if ("hasOmit" in term) return [term, parseTypeAnnotation(annotation)];
   return [term, null];
 }
@@ -102,7 +104,10 @@ function _parsePattern(pattern: string): [Pattern, Signature] {
     .map((x) => x[1])
     .filter((x): x is TypeAnnotation => x != null);
   const [outputTerm] = _parseTerm(output.trim());
-  return [new Pattern(inputTerms, outputTerm), { param }];
+
+  const file: SourceFile = { path: "<built-in function>", content: "" };
+  const metadata: SourceMetadata = { spans: [{ start: 0, end: 0 }], file };
+  return [new Pattern(inputTerms, outputTerm, metadata), { param }];
 }
 
 export const BUILTIN_PATTERNS = Object.entries(_BUILTIN_PATTERN)

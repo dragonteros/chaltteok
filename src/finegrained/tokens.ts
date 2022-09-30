@@ -22,7 +22,7 @@ export function restoreTokenFromKey(key: string): Token {
   if (match == null)
     throw new InternalError("restoreTokenFromKey::WRONG_FORMAT");
 
-  const [lemma, pos] = match;
+  const [, lemma, pos] = match;
   if (pos.endsWith("수사") || pos.endsWith("수관형사")) {
     const number = Number(lemma);
     if (Number.isNaN(number))
@@ -35,7 +35,7 @@ export function restoreTokenFromKey(key: string): Token {
     };
   }
 
-  return { type: "id", lemma, pos: pos as any };
+  return { type: "word", lemma, pos: pos as any };
 }
 
 export function getKeyFromToken(token: Token): string {
