@@ -3,7 +3,7 @@ import { mergeMetadata, WithMetadata } from "../base/metadata";
 import { ConcreteTerm, getKeyFromTerm, Tree } from "../finegrained/terms";
 import { getKeyFromToken, Token } from "../finegrained/tokens";
 import { splitArray, zip } from "../utils/utils";
-import { matchPattern } from "./pattern";
+import { matchPattern } from "./matcher";
 import { IndexedPatterns } from "./utils";
 
 function phraseOperation(trees: Tree[], patterns: IndexedPatterns): Tree[] {
@@ -32,10 +32,10 @@ function parseSentence(
   patterns: IndexedPatterns
 ): Tree {
   if (tokens.length === 0) throw new InternalError("parseSentence::EMPTY");
-  const phrases = splitArray(tokens, function ({ value: token, ...metadata }) {
+  const phrases = splitArray(tokens, function ({ value: token, metadata }) {
     if (token.type === "symbol") return null;
     const term: ConcreteTerm = { token, pos: token.pos };
-    return new Tree({ ...metadata, value: term }, [], getKeyFromToken(token));
+    return new Tree(term, [], metadata, getKeyFromToken(token));
   });
   if (phrases[0].length === 0) {
     throw new ChaltteokSyntaxError(
@@ -67,9 +67,7 @@ function parseSentence(
   const result = phraseOperation(phrases.flat(), patterns);
 
   if (result.length !== 1) {
-    const wantedPattern = result
-      .map((x) => getKeyFromTerm(x.head.value))
-      .join(" ");
+    const wantedPattern = result.map((x) => getKeyFromTerm(x.head)).join(" ");
     throw new ChaltteokSyntaxError(
       `"${wantedPattern}"#{이?}라는 구문을 이해하지 못했습니다.`,
       mergeMetadata(...tokens.map((token) => token.metadata))

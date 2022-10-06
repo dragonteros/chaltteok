@@ -54,6 +54,14 @@ describe("품사 분석", function () {
   describe("기본", function () {
     it("서술어", function () {
       assertTokenized("하다", "하다[동사] -다[어미]");
+      assertTokenized("한다", "하다[동사] -(으)ㄴ다/-는다[어미]");
+    });
+    it("이다", function () {
+      assertTokenized("정수다", "정수[명사] 이다[조사] -다[어미]");
+      assertTokenized("일이다", "1[한자어수사] 이다[조사] -다[어미]");
+      assertTokenized("이다", "2[한자어수사] 이다[조사] -다[어미]");
+      assertTokenized("3이다", "3[한자어수사] 이다[조사] -다[어미]");
+      assertTokenized("4다", "4[한자어수사] 이다[조사] -다[어미]");
     });
     it("목적어와 서술어", function () {
       assertTokenized(
@@ -66,6 +74,7 @@ describe("품사 분석", function () {
         "갑절이 되다",
         "갑절[명사] 가[조사] 되다[동사] -다[어미]"
       );
+      assertTokenized("몫으로 삼다", "몫[명사] 로[조사] 삼다[동사] -다[어미]");
     });
   });
 
@@ -89,6 +98,14 @@ describe("품사 분석", function () {
       assertTokenized(
         "2분의, 3분의 1",
         "2[한자어수사] 분[접미사] 의[조사] , 3[한자어수사] 분[접미사] 의[조사] 1[한자어수사]"
+      );
+    });
+
+    it("거듭제곱", function () {
+      assertTokenized("3의 제곱", "3[한자어수사] 의[조사] 제곱[명사]");
+      assertTokenized(
+        "3의 0제곱",
+        "3[한자어수사] 의[조사] 0[한자어수사] 제곱[접미사]"
       );
     });
 

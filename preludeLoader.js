@@ -11,8 +11,8 @@ const data =
       if (!isFile) return "";
       return readFileSync(filepath, { encoding: "utf-8" });
     })
-    .join("\n")
-    .replace(/\n+/g, "\n")
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n")
     .replace(/[^\n\S]+/g, " ") + "\n";
 
 writeFileSync(

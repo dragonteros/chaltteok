@@ -702,6 +702,49 @@ describe("거시 해석", function () {
         },
       ]);
     });
+    it("문단", function () {
+      const program = `
+어흥.
+  나는 사나운
+
+호랑이다.
+
+멍.
+나는 하룻강아지.`;
+      const file = { path: "<test>", content: program };
+      assertCoarse(program, [
+        {
+          type: "Expr",
+          expr: {
+            metadata: { file, spans: [{ start: 1, end: 4 }] },
+            value: `어흥.`,
+          },
+        },
+        {
+          type: "Expr",
+          expr: {
+            metadata: { file, spans: [{ start: 7, end: 20 }] },
+            value: `나는 사나운
+
+호랑이다.`,
+          },
+        },
+        {
+          type: "Expr",
+          expr: {
+            metadata: { file, spans: [{ start: 22, end: 24 }] },
+            value: `멍.`,
+          },
+        },
+        {
+          type: "Expr",
+          expr: {
+            metadata: { file, spans: [{ start: 25, end: 34 }] },
+            value: `나는 하룻강아지.`,
+          },
+        },
+      ]);
+    });
     it("주석", function () {
       const program = `
 어흥.
@@ -737,19 +780,25 @@ describe("거시 해석", function () {
       ]);
     });
   });
+  describe("주석", function () {
+    it("기본", function () {
+      const program = ` (어흥. 나는 사나운
+
+        호랑이다.) `;
+      assertCoarse(program, []);
+    });
+  });
 
   describe("종합", function () {
     it("표현식 소속 결정", function () {
       const program = `
 어느 정수가 어느 정수로 나누어떨어지다:
-  앞의 정수를 뒤의 정수로 나눈 것을 '갑'이라고 하자.
+  앞의 정수를 뒤의 정수로 나눈 것을
 
-(애옹)
+  '갑'이라고 하자.
+(애 옹)갑의 나머지가 0이 되다.
 
-  갑의 나머지가 0이 되다.
-
-
-  얼마의 정수부:
+ 얼마의 정수부:
 
 
   해당 수에서 해당 수의 
@@ -758,7 +807,8 @@ describe("거시 해석", function () {
   
     정수.
 
-5를 2로 나눠 그 정수부. 5가 2로 나누어떨어진다.
+  5를 2로 나눠 그 정수부.
+5가 2로 나누어떨어진다.
 `;
       const file = { path: "<test>", content: program };
       assertCoarse(program, [
@@ -776,15 +826,14 @@ describe("거시 해석", function () {
               metadata: {
                 file,
                 spans: [
-                  { start: 26, end: 58 },
-                  { start: 62, end: 80 },
+                  { start: 26, end: 60 },
+                  { start: 65, end: 79 },
                 ],
               },
-              value: `앞의 정수를 뒤의 정수로 나눈 것을 '갑'이라고 하자.
+              value: `앞의 정수를 뒤의 정수로 나눈 것을
 
-
-
-  갑의 나머지가 0이 되다.`,
+  '갑'이라고 하자.
+갑의 나머지가 0이 되다.`,
             },
           },
         },
@@ -792,14 +841,14 @@ describe("거시 해석", function () {
           type: "FunDef",
           patterns: [
             {
-              metadata: { file, spans: [{ start: 85, end: 92 }] },
+              metadata: { file, spans: [{ start: 82, end: 89 }] },
               value: "얼마의 정수부",
             },
           ],
           body: {
             type: "Expr",
             expr: {
-              metadata: { file, spans: [{ start: 98, end: 130 }] },
+              metadata: { file, spans: [{ start: 95, end: 127 }] },
               value: `해당 수에서 해당 수의 
 
 소수부를 뺀
@@ -811,8 +860,102 @@ describe("거시 해석", function () {
         {
           type: "Expr",
           expr: {
-            metadata: { file, spans: [{ start: 132, end: 162 }] },
-            value: `5를 2로 나눠 그 정수부. 5가 2로 나누어떨어진다.`,
+            metadata: { file, spans: [{ start: 131, end: 146 }] },
+            value: `5를 2로 나눠 그 정수부.`,
+          },
+        },
+        {
+          type: "Expr",
+          expr: {
+            metadata: { file, spans: [{ start: 147, end: 161 }] },
+            value: `5가 2로 나누어떨어진다.`,
+          },
+        },
+      ]);
+    });
+    it("처음에 표현식", function () {
+      const program = `
+        나는 퍼리가 좋아. 퍼리를 사랑해.
+        잘생긴 늑대 퍼리 보고 싶다: 눈 마주치면 씨익 웃는 늑대. 최고야.
+      `;
+      const file = { path: "<test>", content: program };
+      assertCoarse(program, [
+        {
+          type: "Expr",
+          expr: {
+            metadata: { file, spans: [{ start: 9, end: 19 }] },
+            value: `나는 퍼리가 좋아.`,
+          },
+        },
+        {
+          type: "Expr",
+          expr: {
+            metadata: { file, spans: [{ start: 20, end: 28 }] },
+            value: `퍼리를 사랑해.`,
+          },
+        },
+        {
+          type: "FunDef",
+          patterns: [
+            {
+              metadata: { file, spans: [{ start: 37, end: 52 }] },
+              value: "잘생긴 늑대 퍼리 보고 싶다",
+            },
+          ],
+          body: {
+            type: "Expr",
+            expr: {
+              metadata: {
+                file,
+                spans: [{ start: 54, end: 75 }],
+              },
+              value: `눈 마주치면 씨익 웃는 늑대. 최고야.`,
+            },
+          },
+        },
+      ]);
+    });
+    it("끝에 표현식", function () {
+      const program = `
+        잘생긴 늑대 퍼리 보고 싶다: 눈 마주치면 씨익 웃는 늑대. 최고야.
+
+        나는 퍼리가 좋아.
+
+        퍼리를 사랑해.
+      `;
+      const file = { path: "<test>", content: program };
+      assertCoarse(program, [
+        {
+          type: "FunDef",
+          patterns: [
+            {
+              metadata: { file, spans: [{ start: 9, end: 24 }] },
+              value: "잘생긴 늑대 퍼리 보고 싶다",
+            },
+          ],
+          body: {
+            type: "Expr",
+            expr: {
+              metadata: {
+                file,
+                spans: [{ start: 26, end: 47 }],
+              },
+              value: `눈 마주치면 씨익 웃는 늑대. 최고야.`,
+            },
+          },
+        },
+        {
+          type: "Expr",
+          expr: {
+            metadata: { file, spans: [{ start: 57, end: 67 }] },
+            value: `나는 퍼리가 좋아.`,
+          },
+        },
+        {
+          type: "Expr",
+          expr: {
+            metadata: { file, spans: [{ start: 77, end: 85 }] },
+            value: `퍼리를 사랑해.`,
           },
         },
       ]);

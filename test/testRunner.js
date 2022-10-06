@@ -222,14 +222,14 @@ describe("명령형", function () {
       마이너스 이를 '차분'으로 두자.`;
     assertInterpret(defs + "'초깃값'과 '차분'의 합.", "-1");
     defs += `
-      '초깃값'과 '차분'의 합이 '현재값'이 된다.
-      '현재값'과 '차분'의 합이 '현재값'이 된다.
+      '초깃값'과 '차분'의 합을 '현재값'으로 한다.
+      '현재값'과 '차분'의 합을 '현재값'으로 놓는다.
     `;
     assertInterpret(defs + "'현재값'.", "-3");
   });
-  it("변수 선행사", function () {
-    assertInterpret("1을 '초깃값'으로 삼아 그것에 5를 더한다.", "6");
-  });
+  // it("변수 선행사", function () {
+  //   assertInterpret("1을 '초깃값'으로 삼아 그것에 5를 더한다.", "6");
+  // });
   it("주석", function () {
     const defs = `
       1(안녕)을 '초깃값'(하세요)으로 삼는다.(반갑
@@ -241,34 +241,34 @@ describe("명령형", function () {
       0을 '지표'로 삼고 2를 '결과'라고 하자.
       '지표'가 0과 같을 때까지,
         '결과'의 제곱을 '결과'로 삼고
-        '지표'에 1을 더해 두자.`;
+        '지표'에 1을 더하자.`;
     assertInterpret(defs + "'결과'.", "2");
     defs = `
       0을 '지표'로 삼고 2를 '결과'라고 하자.
-      '지표'가 5와 같을 때까지,
+      '지표'가 2와 같을 때까지,
         '결과'의 제곱을 '결과'로 삼고
-        '지표'에 1을 더해 놓자.`;
-    assertInterpret(defs + "'결과'.", "32");
+        '지표'에 1을 더하자.`;
+    assertInterpret(defs + "'결과'.", "16");
   });
   it("반복 변형", function () {
     let defs = `
       0을 '지표'로 삼고 2를 '결과'라고 하자.
-      '지표'가 5와 같게 될 때까지,
+      '지표'가 2와 같게 될 때까지,
         '결과'의 제곱을 '결과'로 삼고
-        '지표'에 1을 더해 놓자.`;
-    assertInterpret(defs + "'결과'.", "32");
+        '지표'에 1을 더하자.`;
+    assertInterpret(defs + "'결과'.", "16");
     defs = `
       0을 '지표'로 삼고 2를 '결과'라고 하자.
-      '지표'가 5와 다르지 않을 때까지,
+      '지표'가 2와 다르지 않을 때까지,
         '결과'의 제곱을 '결과'로 삼고
-        '지표'에 1을 더해 두자.`;
-    assertInterpret(defs + "'결과'.", "32");
+        '지표'에 1을 더하자.`;
+    assertInterpret(defs + "'결과'.", "16");
     defs = `
       0을 '지표'로 삼고 2를 '결과'라고 하자.
-      '지표'가 5와 다르지 않게 될 때까지,
+      '지표'가 2와 다르지 않게 될 때까지,
         '결과'의 제곱을 '결과'로 삼고
-        '지표'에 1을 더해 놓자.`;
-    assertInterpret(defs + "'결과'.", "32");
+        '지표'에 1을 더하자.`;
+    assertInterpret(defs + "'결과'.", "16");
   });
 });
 
@@ -285,9 +285,7 @@ describe("함수", function () {
         뒤의 정수가 앞의 정수의 배수이다.
 
       짝수 [명사] -> 2의 배수
-      ( TODO
-        홀수 [명사]: 짝수가 아닌 정수.
-      )
+      ( TODO 홀수 [명사]: 짝수가 아닌 정수. )
       `;
     // assertInterpret(defs + "2는 4의 배수이다.", "거짓");
     assertInterpret(defs + "2가 4의 배수이다.", "거짓");
@@ -304,7 +302,8 @@ describe("함수", function () {
       비슷하다 [형용사] 비슷하여/비슷해, 비슷하니
       두 수가 비슷하다:
         두 수의 차가 일억분의 일보다 작다.  (TODO: assert [2 수, ])
-      `;
+
+    `;
     assertInterpret(defs + "1e-8과 1.1e-8이 비슷하다.", "참"); // TODO: ~는
     assertInterpret(defs + "1e-7과 1.1e-7이 비슷하다.", "거짓");
     assertInterpret(defs + "1e-7과 1.01e-7이 비슷하다.", "참");
@@ -312,35 +311,40 @@ describe("함수", function () {
 });
 
 describe("응용", function () {
-  it("재귀", function () {
+  it("계승", function () {
     const defs = `
-      팩토리얼 [명사]
-      어느 정수의 팩토리얼:  (TODO: 자연수?)
-        해당 정수가 2 이상이면
-          해당 정수보다 하나 작은 정수의 팩토리얼과 해당 정수의 곱
-        아니면 1.
-      계승 [명사] -> 팩토리얼
+      계승 [명사]
+      차례곱 [명사] -> 계승
+      팩토리얼 [명사] -> 계승
 
-      번째 [명사]
-      피보나치수 [명사]
-      몇 번째의/ 피보나치수: (TODO: remove /)
-        해당 정수가 2보다 크면
-          해당 정수보다 둘 작은 번째의 피보나치수와
-          해당 정수보다 하나 작은 번째의 피보나치수의 합
+      어느 정수의 계승:  (TODO: 자연수?)
+        해당 정수가 2 이상이면
+          해당 정수에서 1을 뺀 정수의 팩토리얼과 해당 정수의 곱
         아니면 1.
 
       `;
     assertInterpret(defs + "1의 팩토리얼.", "1");
     assertInterpret(defs + "2의 계승.", "2");
-    assertInterpret(defs + "3의 팩토리얼.", "6");
+    assertInterpret(defs + "3의 차례곱.", "6");
     assertInterpret(defs + "4의 계승.", "24");
-
-    assertInterpret(defs + "첫 번째 피보나치수.", "1");
-    assertInterpret(defs + "두 번째 피보나치수.", "1");
-    assertInterpret(defs + "세 번째 피보나치수.", "2");
-    assertInterpret(defs + "네 번째 피보나치수.", "3");
-    assertInterpret(defs + "다섯 번째 피보나치수.", "5");
   });
+  // it("피보나치수", function () {
+  //   const defs = `
+  //     번째 [명사]
+  //     피보나치수 [명사]
+  //     몇 번째의/ 피보나치수: (TODO: remove /)
+  //       해당 정수가 2보다 크면
+  //         해당 정수보다 둘 작은 번째의 피보나치수와
+  //         해당 정수보다 하나 작은 번째의 피보나치수의 합
+  //       아니면 1.
+
+  //     `;
+  //   assertInterpret(defs + "첫 번째 피보나치수.", "1");
+  //   assertInterpret(defs + "두 번째 피보나치수.", "1");
+  //   assertInterpret(defs + "세 번째 피보나치수.", "2");
+  //   assertInterpret(defs + "네 번째 피보나치수.", "3");
+  //   assertInterpret(defs + "다섯 번째 피보나치수.", "5");
+  // });
 });
 
 describe("오버로딩", function () {
@@ -348,6 +352,7 @@ describe("오버로딩", function () {
     const defs = `
       어쩌구 [명사]
       어느 수의 어쩌구: 해당 수.
+
       어느 수와 어느 수의 어쩌구: 앞의 수.
 
     `;
@@ -367,6 +372,7 @@ describe("오버로딩", function () {
     let defs = `
       어쩌구 [명사]
       어느 수와 어느 수의 어쩌구: 앞의 수와 뒤의 수의 곱.
+
       어느 정수와 어느 정수의 어쩌구: 앞의 정수와 뒤의 정수의 곱.
 
     `;

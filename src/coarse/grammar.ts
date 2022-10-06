@@ -3,10 +3,10 @@
 // Bypasses TS6133. Allow declared but unused functions.
 // @ts-ignore
 function id(d: any[]): any { return d[0]; }
-declare var EndOfLine: any;
-declare var JS: any;
+declare var EndOfDocument: any;
+declare var NewLine: any;
 declare var Whitespace: any;
-declare var LineFeed: any;
+declare var JS: any;
 declare var Word: any;
 declare var SentenceFinal: any;
 
@@ -65,26 +65,28 @@ interface Grammar {
 const grammar: Grammar = {
   Lexer: tokenizer,
   ParserRules: [
-    {"name": "program$ebnf$1", "symbols": ["exprStmtCont"], "postprocess": id},
-    {"name": "program$ebnf$1", "symbols": [], "postprocess": () => null},
-    {"name": "program$ebnf$2$subexpression$1", "symbols": ["statement"], "postprocess": id},
-    {"name": "program$ebnf$2$subexpression$1", "symbols": ["spaceOrNewLine"], "postprocess": skip},
-    {"name": "program$ebnf$2", "symbols": ["program$ebnf$2$subexpression$1"]},
-    {"name": "program$ebnf$2$subexpression$2", "symbols": ["statement"], "postprocess": id},
-    {"name": "program$ebnf$2$subexpression$2", "symbols": ["spaceOrNewLine"], "postprocess": skip},
-    {"name": "program$ebnf$2", "symbols": ["program$ebnf$2", "program$ebnf$2$subexpression$2"], "postprocess": (d) => d[0].concat([d[1]])},
+    {"name": "program$ebnf$1", "symbols": []},
+    {"name": "program$ebnf$1$subexpression$1", "symbols": ["statement"], "postprocess": id},
+    {"name": "program$ebnf$1$subexpression$1", "symbols": ["spaceOrNewLine"], "postprocess": skip},
+    {"name": "program$ebnf$1", "symbols": ["program$ebnf$1", "program$ebnf$1$subexpression$1"], "postprocess": (d) => d[0].concat([d[1]])},
+    {"name": "program$ebnf$2", "symbols": [(tokenizer.has("EndOfDocument") ? {type: "EndOfDocument"} : EndOfDocument)], "postprocess": id},
+    {"name": "program$ebnf$2", "symbols": [], "postprocess": () => null},
     {"name": "program", "symbols": ["program$ebnf$1", "program$ebnf$2"], "postprocess": 
-        ([expr, stmts]) => filter([intoExpr(expr), ...stmts])
+        ([stmts]) => filter(stmts)
         },
     {"name": "statement", "symbols": ["vocabDef"], "postprocess": id},
     {"name": "statement", "symbols": ["synonymDef"], "postprocess": id},
     {"name": "statement", "symbols": ["vocabFunDef"], "postprocess": id},
     {"name": "statement", "symbols": ["funDef"], "postprocess": id},
-    {"name": "statement", "symbols": ["exprStmt"], "postprocess": id},
-    {"name": "vocabDef", "symbols": ["vocabCore", (tokenizer.has("EndOfLine") ? {type: "EndOfLine"} : EndOfLine)], "postprocess": 
+    {"name": "statement", "symbols": ["expr"], "postprocess": ([expr]) => intoExpr(expr)},
+    {"name": "vocabDef$subexpression$1", "symbols": [(tokenizer.has("NewLine") ? {type: "NewLine"} : NewLine)]},
+    {"name": "vocabDef$subexpression$1", "symbols": [(tokenizer.has("EndOfDocument") ? {type: "EndOfDocument"} : EndOfDocument)]},
+    {"name": "vocabDef", "symbols": ["vocabCore", "vocabDef$subexpression$1"], "postprocess": 
         ([vocab]) => ({ type: "VocabDef", vocab })
         },
-    {"name": "synonymDef", "symbols": ["vocabCore", {"literal":"->"}, "_text_", (tokenizer.has("EndOfLine") ? {type: "EndOfLine"} : EndOfLine)], "postprocess": 
+    {"name": "synonymDef$subexpression$1", "symbols": [(tokenizer.has("NewLine") ? {type: "NewLine"} : NewLine)]},
+    {"name": "synonymDef$subexpression$1", "symbols": [(tokenizer.has("EndOfDocument") ? {type: "EndOfDocument"} : EndOfDocument)]},
+    {"name": "synonymDef", "symbols": ["vocabCore", {"literal":"->"}, "_text_", "synonymDef$subexpression$1"], "postprocess": 
         ([vocab, , synonym]) => ({ type: "SynonymDef", vocab, synonym })
         },
     {"name": "vocabCore", "symbols": ["text_", {"literal":"["}, "_text_", {"literal":"]"}, "maybeText"], "postprocess": 
@@ -94,51 +96,33 @@ const grammar: Grammar = {
           extra: extra && trimStringWithMetadata(extra),
         })
         },
-    {"name": "vocabFunDef", "symbols": ["vocabCore", {"literal":":"}, "body"], "postprocess": 
-        ([vocab, , body]) => ({ type: "VocabFunDef", vocab, body })
+    {"name": "vocabFunDef$ebnf$1", "symbols": []},
+    {"name": "vocabFunDef$ebnf$1", "symbols": ["vocabFunDef$ebnf$1", "spaceOrNewLine"], "postprocess": (d) => d[0].concat([d[1]])},
+    {"name": "vocabFunDef", "symbols": ["vocabCore", {"literal":":"}, "vocabFunDef$ebnf$1", "body"], "postprocess": 
+        ([vocab, , , body]) => ({ type: "VocabFunDef", vocab, body })
         },
-    {"name": "funDef$ebnf$1", "symbols": []},
-    {"name": "funDef$ebnf$1$subexpression$1$ebnf$1", "symbols": []},
-    {"name": "funDef$ebnf$1$subexpression$1$ebnf$1", "symbols": ["funDef$ebnf$1$subexpression$1$ebnf$1", "spaceOrNewLine"], "postprocess": (d) => d[0].concat([d[1]])},
-    {"name": "funDef$ebnf$1$subexpression$1", "symbols": ["pattern", "funDef$ebnf$1$subexpression$1$ebnf$1"], "postprocess": id},
-    {"name": "funDef$ebnf$1", "symbols": ["funDef$ebnf$1", "funDef$ebnf$1$subexpression$1"], "postprocess": (d) => d[0].concat([d[1]])},
-    {"name": "funDef", "symbols": ["funDef$ebnf$1", "pattern", "body"], "postprocess": 
-        ([patterns, pattern, body]) => ({
-          type: "FunDef",
-          patterns: [...patterns, pattern],
-          body,
-        })
+    {"name": "funDef$ebnf$1", "symbols": ["pattern"]},
+    {"name": "funDef$ebnf$1", "symbols": ["funDef$ebnf$1", "pattern"], "postprocess": (d) => d[0].concat([d[1]])},
+    {"name": "funDef", "symbols": ["funDef$ebnf$1", "body"], "postprocess": 
+        ([patterns, body]) => ({ type: "FunDef", patterns, body })
         },
-    {"name": "pattern", "symbols": ["text_", {"literal":":"}], "postprocess": id},
-    {"name": "body$ebnf$1", "symbols": ["exprBody"]},
-    {"name": "body$ebnf$1", "symbols": ["body$ebnf$1", "exprBody"], "postprocess": (d) => d[0].concat([d[1]])},
-    {"name": "body", "symbols": ["body$ebnf$1"], "postprocess": ([exprs]) => intoExpr(...exprs)},
-    {"name": "body$ebnf$2", "symbols": []},
-    {"name": "body$ebnf$2", "symbols": ["body$ebnf$2", "spaceOrNewLine"], "postprocess": (d) => d[0].concat([d[1]])},
-    {"name": "body", "symbols": ["body$ebnf$2", (tokenizer.has("JS") ? {type: "JS"} : JS)], "postprocess": 
-        ([, block]) => ({ type: "JSBody", block: merge(block) })  // cast
+    {"name": "pattern$ebnf$1", "symbols": []},
+    {"name": "pattern$ebnf$1", "symbols": ["pattern$ebnf$1", "spaceOrNewLine"], "postprocess": (d) => d[0].concat([d[1]])},
+    {"name": "pattern", "symbols": ["text_", {"literal":":"}, "pattern$ebnf$1"], "postprocess": id},
+    {"name": "body$ebnf$1", "symbols": []},
+    {"name": "body$ebnf$1", "symbols": ["body$ebnf$1", (tokenizer.has("Whitespace") ? {type: "Whitespace"} : Whitespace)], "postprocess": (d) => d[0].concat([d[1]])},
+    {"name": "body", "symbols": ["exprBody", "body$ebnf$1", "doubleNewLines"], "postprocess": ([expr]) => intoExpr(expr)},
+    {"name": "body", "symbols": [(tokenizer.has("JS") ? {type: "JS"} : JS)], "postprocess": 
+        ([block]) => ({ type: "JSBody", block: merge(block) })  // cast
                 },
-    {"name": "exprBody$ebnf$1", "symbols": []},
-    {"name": "exprBody$ebnf$1", "symbols": ["exprBody$ebnf$1", (tokenizer.has("Whitespace") ? {type: "Whitespace"} : Whitespace)], "postprocess": (d) => d[0].concat([d[1]])},
-    {"name": "exprBody", "symbols": ["exprBody$ebnf$1", "expr"], "postprocess": ([spaces, expr]) => merge(...spaces, expr)},
-    {"name": "exprBody$ebnf$2", "symbols": []},
-    {"name": "exprBody$ebnf$2", "symbols": ["exprBody$ebnf$2", "spaceOrNewLine"], "postprocess": (d) => d[0].concat([d[1]])},
-    {"name": "exprBody$ebnf$3", "symbols": [(tokenizer.has("Whitespace") ? {type: "Whitespace"} : Whitespace)]},
-    {"name": "exprBody$ebnf$3", "symbols": ["exprBody$ebnf$3", (tokenizer.has("Whitespace") ? {type: "Whitespace"} : Whitespace)], "postprocess": (d) => d[0].concat([d[1]])},
-    {"name": "exprBody", "symbols": ["exprBody$ebnf$2", (tokenizer.has("LineFeed") ? {type: "LineFeed"} : LineFeed), "exprBody$ebnf$3", "expr"], "postprocess": 
-        ([spaces, newLine, indents, expr]) =>
-          merge(...spaces, newLine, ...indents, expr)
-                    },
-    {"name": "exprStmt$ebnf$1", "symbols": []},
-    {"name": "exprStmt$ebnf$1", "symbols": ["exprStmt$ebnf$1", "exprStmtCont"], "postprocess": (d) => d[0].concat([d[1]])},
-    {"name": "exprStmt", "symbols": [(tokenizer.has("LineFeed") ? {type: "LineFeed"} : LineFeed), "expr", "exprStmt$ebnf$1"], "postprocess": 
-        ([, expr, exprs]) => intoExpr(expr, ...exprs)
-        },
-    {"name": "exprStmtCont$ebnf$1", "symbols": []},
-    {"name": "exprStmtCont$ebnf$1", "symbols": ["exprStmtCont$ebnf$1", "spaceOrNewLine"], "postprocess": (d) => d[0].concat([d[1]])},
-    {"name": "exprStmtCont", "symbols": ["exprStmtCont$ebnf$1", "expr"], "postprocess": 
-        ([spaces, expr]) => merge(...spaces, expr)
-        },
+    {"name": "exprBody", "symbols": ["expr"], "postprocess": ([expr]) => expr},
+    {"name": "exprBody", "symbols": ["exprBody", "maybeNewLine", "expr"], "postprocess": (exprs) => merge(...exprs)},
+    {"name": "doubleNewLines", "symbols": [(tokenizer.has("EndOfDocument") ? {type: "EndOfDocument"} : EndOfDocument)], "postprocess": skip},
+    {"name": "doubleNewLines$ebnf$1", "symbols": []},
+    {"name": "doubleNewLines$ebnf$1", "symbols": ["doubleNewLines$ebnf$1", (tokenizer.has("Whitespace") ? {type: "Whitespace"} : Whitespace)], "postprocess": (d) => d[0].concat([d[1]])},
+    {"name": "doubleNewLines$subexpression$1", "symbols": [(tokenizer.has("NewLine") ? {type: "NewLine"} : NewLine)]},
+    {"name": "doubleNewLines$subexpression$1", "symbols": [(tokenizer.has("EndOfDocument") ? {type: "EndOfDocument"} : EndOfDocument)]},
+    {"name": "doubleNewLines", "symbols": [(tokenizer.has("NewLine") ? {type: "NewLine"} : NewLine), "doubleNewLines$ebnf$1", "doubleNewLines$subexpression$1"], "postprocess": skip},
     {"name": "expr$ebnf$1", "symbols": []},
     {"name": "expr$ebnf$1$subexpression$1", "symbols": [(tokenizer.has("Word") ? {type: "Word"} : Word)], "postprocess": id},
     {"name": "expr$ebnf$1$subexpression$1", "symbols": ["spaceOrNewLine"], "postprocess": id},
@@ -147,8 +131,18 @@ const grammar: Grammar = {
         ([text, texts, final]) => merge(text, ...texts, final)
         },
     {"name": "spaceOrNewLine", "symbols": [(tokenizer.has("Whitespace") ? {type: "Whitespace"} : Whitespace)], "postprocess": id},
-    {"name": "spaceOrNewLine", "symbols": [(tokenizer.has("EndOfLine") ? {type: "EndOfLine"} : EndOfLine)], "postprocess": id},
-    {"name": "spaceOrNewLine", "symbols": [(tokenizer.has("LineFeed") ? {type: "LineFeed"} : LineFeed)], "postprocess": id},
+    {"name": "spaceOrNewLine", "symbols": [(tokenizer.has("NewLine") ? {type: "NewLine"} : NewLine)], "postprocess": id},
+    {"name": "maybeNewLine$ebnf$1", "symbols": []},
+    {"name": "maybeNewLine$ebnf$1", "symbols": ["maybeNewLine$ebnf$1", (tokenizer.has("Whitespace") ? {type: "Whitespace"} : Whitespace)], "postprocess": (d) => d[0].concat([d[1]])},
+    {"name": "maybeNewLine", "symbols": ["maybeNewLine$ebnf$1"], "postprocess": ([spaces]) => merge(...spaces)},
+    {"name": "maybeNewLine$ebnf$2", "symbols": []},
+    {"name": "maybeNewLine$ebnf$2", "symbols": ["maybeNewLine$ebnf$2", (tokenizer.has("Whitespace") ? {type: "Whitespace"} : Whitespace)], "postprocess": (d) => d[0].concat([d[1]])},
+    {"name": "maybeNewLine$ebnf$3", "symbols": []},
+    {"name": "maybeNewLine$ebnf$3", "symbols": ["maybeNewLine$ebnf$3", (tokenizer.has("Whitespace") ? {type: "Whitespace"} : Whitespace)], "postprocess": (d) => d[0].concat([d[1]])},
+    {"name": "maybeNewLine", "symbols": ["maybeNewLine$ebnf$2", (tokenizer.has("NewLine") ? {type: "NewLine"} : NewLine), "maybeNewLine$ebnf$3"], "postprocess": 
+        ([leading, newline, trailing]) =>
+          merge(...leading, newline, ...trailing)
+                        },
     {"name": "_text_$ebnf$1", "symbols": []},
     {"name": "_text_$ebnf$1", "symbols": ["_text_$ebnf$1", (tokenizer.has("Whitespace") ? {type: "Whitespace"} : Whitespace)], "postprocess": (d) => d[0].concat([d[1]])},
     {"name": "_text_", "symbols": ["_text_$ebnf$1", "text_"], "postprocess": ([, text]) => text},

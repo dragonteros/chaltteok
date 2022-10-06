@@ -29,20 +29,20 @@ function intoExpr(...texts: (WithMetadata<string> | null)[]) {
 @lexer tokenizer
 
 # Program
-program -> exprStmtCont:? (statement {% id %} | spaceOrNewLine {% skip %}):+ {%
-  ([expr, stmts]) => filter([intoExpr(expr), ...stmts])
+program -> (statement {% id %} | spaceOrNewLine {% skip %}):* %EndOfDocument:? {%
+  ([stmts]) => filter(stmts)
 %}
 statement -> vocabDef {% id %}
            | synonymDef {% id %}
            | vocabFunDef {% id %}
            | funDef {% id %}
-           | exprStmt {% id %}
+           | expr {% ([expr]) => intoExpr(expr) %}
 
 # Vocab Definition
-vocabDef -> vocabCore %EndOfLine {%
+vocabDef -> vocabCore (%NewLine | %EndOfDocument) {%
   ([vocab]) => ({ type: "VocabDef", vocab })
 %}
-synonymDef -> vocabCore "->" _text_ %EndOfLine {%
+synonymDef -> vocabCore "->" _text_ (%NewLine | %EndOfDocument) {%
   ([vocab, , synonym]) => ({ type: "SynonymDef", vocab, synonym })
 %}
 vocabCore -> text_ "[" _text_ "]" maybeText {%
@@ -54,42 +54,35 @@ vocabCore -> text_ "[" _text_ "]" maybeText {%
 %}
 
 # Function Definition
-vocabFunDef -> vocabCore ":" body {%
-  ([vocab, , body]) => ({ type: "VocabFunDef", vocab, body })
+vocabFunDef -> vocabCore ":" spaceOrNewLine:* body {%
+  ([vocab, , , body]) => ({ type: "VocabFunDef", vocab, body })
 %}
-funDef -> (pattern spaceOrNewLine:* {% id %}):* pattern body {%
-  ([patterns, pattern, body]) => ({
-    type: "FunDef",
-    patterns: [...patterns, pattern],
-    body,
-  })
+funDef -> pattern:+ body {%
+  ([patterns, body]) => ({ type: "FunDef", patterns, body })
 %}
-pattern -> text_ ":" {% id %}
+pattern -> text_ ":" spaceOrNewLine:* {% id %}
 
-body -> exprBody:+ {% ([exprs]) => intoExpr(...exprs) %}
-      | spaceOrNewLine:* %JS {%
-          ([, block]) => ({ type: "JSBody", block: merge(block) })  // cast
+body -> exprBody %Whitespace:* doubleNewLines {% ([expr]) => intoExpr(expr) %}
+      | %JS {%
+          ([block]) => ({ type: "JSBody", block: merge(block) })  // cast
         %}
-exprBody -> %Whitespace:* expr {% ([spaces, expr]) => merge(...spaces, expr) %}
-          | spaceOrNewLine:* %LineFeed %Whitespace:+ expr {%
-              ([spaces, newLine, indents, expr]) =>
-                merge(...spaces, newLine, ...indents, expr)
-            %}
+exprBody -> expr {% ([expr]) => expr %}
+          | exprBody maybeNewLine expr {% (exprs) => merge(...exprs) %}
+doubleNewLines -> %EndOfDocument {% skip %}
+                | %NewLine %Whitespace:* (%NewLine | %EndOfDocument) {% skip %}
 
 # Expr
-exprStmt -> %LineFeed expr exprStmtCont:* {%
-  ([, expr, exprs]) => intoExpr(expr, ...exprs)
-%}
-exprStmtCont -> spaceOrNewLine:* expr {%
-  ([spaces, expr]) => merge(...spaces, expr)
-%}
-
 expr -> %Word (%Word {% id %} | spaceOrNewLine {% id %}):* %SentenceFinal {%
   ([text, texts, final]) => merge(text, ...texts, final)
 %}
 
 # Building blocks
-spaceOrNewLine -> %Whitespace {% id %} | %EndOfLine {% id %} | %LineFeed {% id %}
+spaceOrNewLine -> %Whitespace {% id %} | %NewLine {% id %} 
+maybeNewLine -> %Whitespace:* {% ([spaces]) => merge(...spaces) %}
+              | %Whitespace:* %NewLine %Whitespace:* {%
+                  ([leading, newline, trailing]) =>
+                    merge(...leading, newline, ...trailing)
+                %}
 
 _text_ -> %Whitespace:* text_ {% ([, text]) => text %}
 text_ -> %Word maybeText {%

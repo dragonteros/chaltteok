@@ -11,7 +11,8 @@ import {
   VariableAnnotation,
 } from "../finegrained/types";
 import { Analyzer, makeJosa } from "../lexer/analyzer";
-import { equalWord, parseTypeAnnotation } from "../parser/pattern";
+import { equalWord } from "../parser/matcher";
+import { parseTypeAnnotation } from "../parser/pattern";
 import { Signature } from "../typechecker/signature";
 
 import { tokenize } from "../lexer/tokenizer";
@@ -41,6 +42,7 @@ export function addVocab(analyzer: Analyzer, vocab: VocabEntry): void {
     if (all || extra.includes("동사")) attachTo.push("동사");
     if (all || extra.includes("형용사")) attachTo.push("형용사");
     if (all || extra.includes("있다")) attachTo.push("있다");
+    if (all || extra.includes("없다")) attachTo.push("없다");
     if (all || extra.includes("이다")) attachTo.push("이다");
     if (all || extra.includes("아니다")) attachTo.push("아니다");
 

@@ -28,11 +28,11 @@
 곱하다 [동사] 곱하여/곱해, 곱하니
 얼마에 얼마를 곱하다:
 얼마와 얼마를 곱하다: {
-  return ([x], [y]) => [{type: "수", 값: x.값 * y.값}];
+  return ([x], [y]) => [{ type: "수", 값: x.값 * y.값 }];
 }
 어느 정수에 어느 정수를 곱하다:
 어느 정수와 어느 정수를 곱하다: {
-  return ([x], [y]) => [{type: "정수", 값: x.값 * y.값}];
+  return ([x], [y]) => [{ type: "정수", 값: x.값 * y.값 }];
 }
 여러 수를 모두 곱하다: {
   return (nums) => [nums.reduce((x, y) => ({type: "수", 값: x.값 * y.값}))];
@@ -40,20 +40,18 @@
 여러 정수를 모두 곱하다: {
   return (nums) => [nums.reduce((x, y) => ({type: "정수", 값: x.값 * y.값}))];
 }
-어느 수 변수에 얼마를 곱해 놓다:
-어느 수 변수에 얼마를 곱해 두다: {
+어느 수 변수에 얼마를 곱하다: {
   return function (box, [num]) {
     box.data[0].type = "수";
     box.data[0].값 *= num.값;
-    return [];
+    return box;
   };
 }
-어느 정수 변수에 어느 정수를 곱해 놓다:
-어느 정수 변수에 어느 정수를 곱해 두다: {
+어느 정수 변수에 어느 정수를 곱하다: {
   return function (box, [num]) {
     box.data[0].type = "정수";
     box.data[0].값 *= num.값;
-    return [];
+    return box;
   };
 }
 
@@ -62,46 +60,54 @@
 어찌한 값:
 어찌한 것: {
   needs("1 나눔");
-  return ([division]) => [{type: "수", 값: division.값}];
+  return ([division]) => [{ type: "수", 값: division.값 }];
 }
 몫 [명사]
 무엇의 몫:
 어찌한 몫: {
   needs("1 나눔");
-  return ([division]) => [{type: "정수", 값: division.몫}];
+  return ([division]) => [{ type: "정수", 값: division.몫 }];
 }
 나머지 [명사]
 무엇의 나머지:
 어찌한 나머지: {
   needs("1 나눔");
-  return ([division]) => [{type: "정수", 값: division.나머지}];
+  return ([division]) => [{ type: "정수", 값: division.나머지 }];
 }
 
 나누다 [동사] 나누어/나눠, 나누니
 얼마를 얼마로 나누다: {
-  return ([나뉘는수], [나누는수]) => [{type: "수", 값: 나뉘는수.값 / 나누는수.값}];
+  return ([나뉘는수], [나누는수]) => [{ type: "수", 값: 나뉘는수.값 / 나누는수.값 }];
 }
 어느 정수를 어느 정수로 나누다: {
   return ([나뉘는수], [나누는수]) => {
     const 값 = 나뉘는수.값 / 나누는수.값;
     const 나머지 = 나뉘는수.값 % 나누는수.값;
     const 몫 = (나뉘는수.값 - 나머지) / 나누는수.값;
-    return [{type: "나눔", 값, 몫, 나머지}];
+    return [{ type: "나눔", 값, 몫, 나머지 }];
+  };
+}
+어느 수 변수를 얼마로 나누다: {
+  return function (box, [num]) {
+    box.data[0].type = "수";  // TODO: auto casting
+    box.data[0].값 /= num.값;
+    return box;
   };
 }
 
 나누어떨어지다 [동사] 나누어떨어져, 나누어떨어지니
 어느 정수가 어느 정수로 나누어떨어지다:
-  앞의 정수를 뒤의 정수로 나누어 그 나머지가 0이 되다. (TODO: "그" 생략)
+  (앞의 정수를 뒤의 정수로 나누어 그 나머지가 0이 되다. (TODO: "그" 생략))
+  앞의 정수를 뒤의 정수로 나눈 나머지가 0이 되다.
 
 더하다 [동사] 더하여/더해, 더하니
 얼마에 얼마를 더하다:
 얼마와 얼마를 더하다: {
-  return ([x], [y]) => [{type: "수", 값: x.값 + y.값}];
+  return ([x], [y]) => [{ type: "수", 값: x.값 + y.값 }];
 }
 어느 정수에 어느 정수를 더하다:
 어느 정수와 어느 정수를 더하다: {
-  return ([x], [y]) => [{type: "정수", 값: x.값 + y.값}];
+  return ([x], [y]) => [{ type: "정수", 값: x.값 + y.값 }];
 }
 여러 수를 모두 더하다: {
   return (nums) => [nums.reduce((x, y) => ({type: "수", 값: x.값 + y.값}))];
@@ -109,33 +115,31 @@
 여러 정수를 모두 더하다: {
   return (nums) => [nums.reduce((x, y) => ({type: "정수", 값: x.값 + y.값}))];
 }
-어느 수 변수에 얼마를 더해 놓다:
-어느 수 변수에 얼마를 더해 두다: {
+어느 수 변수에 얼마를 더하다: {
   return function (box, [num]) {
     box.data[0].type = "수";  // TODO: auto casting
     box.data[0].값 += num.값;
-    return [];
+    return box;
   };
 }
-어느 정수 변수에 어느 정수를 더해 놓다:
-어느 정수 변수에 어느 정수를 더해 두다: {
+어느 정수 변수에 어느 정수를 더하다: {
   return function (box, [num]) {
     box.data[0].type = "정수";  // TODO: auto casting
     box.data[0].값 += num.값;
-    return [];
+    return box;
   };
 }
 
 반올림 [명사]
 얼마의 반올림: {
-  return ([x]) => [{type: "정수", 값: Math.round(x.값)}];
+  return ([x]) => [{ type: "정수", 값: Math.round(x.값) }];
 }
 
 배 [명사] -> 곱절
 
 버림 [명사]
 얼마의 버림: {
-  return ([x]) => [{type: "정수", 값: Math.floor(x.값)}];
+  return ([x]) => [{ type: "정수", 값: Math.floor(x.값) }];
 }
 
 -분 [접미사]
@@ -144,59 +148,52 @@
 
 빼다 [동사] 빼어/빼, 빼니
 얼마에서 얼마를 빼다: {
-  return ([x], [y]) => [{type: "수", 값: x.값 - y.값}];
+  return ([x], [y]) => [{ type: "수", 값: x.값 - y.값 }];
 }
 어느 정수에서 어느 정수를 빼다: {
-  return ([x], [y]) => [{type: "정수", 값: x.값 - y.값}];
+  return ([x], [y]) => [{ type: "정수", 값: x.값 - y.값 }];
 }
-어느 수 변수에서 어느 수를 빼 놓다:
-어느 수 변수에서 어느 수를 빼 두다: {
+어느 수 변수에서 어느 수를 빼다: {
   return function (box, [num]) {
     box.data[0].type = "수";  // TODO: auto casting
     box.data[0].값 -= num.값;
-    return [];
+    return box;
   };
 }
-어느 정수 변수에서 어느 정수를 빼 놓다:
-어느 정수 변수에서 어느 정수를 빼 두다: {
+어느 정수 변수에서 어느 정수를 빼다: {
   return function (box, [num]) {
     box.data[0].type = "정수";
     box.data[0].값 -= num.값;
-    return [];
+    return box;
   };
 }
 
 소수부 [명사]
 얼마의 소수부:
-  해당 수를 1로 나눈 나머지.
+  해당 수에서 해당 수의 정수부를 뺀 값.
 
 올림 [명사]
 얼마의 올림: {
-  return ([x]) => [{type: "정수", 값: Math.ceil(x.값)}];
+  return ([x]) => [{ type: "정수", 값: Math.ceil(x.값) }];
 }
 
 절댓값 [명사]
-얼마의 절댓값: {
-  return ([x]) => [{type: "수", 값: Math.abs(x.값)}];
-}
-어느 정수의 절댓값: {
-  return ([x]) => [{type: "정수", 값: Math.abs(x.값)}];
-}
+얼마의 절댓값:
+  해당 수가 0보다 크면 해당 수, 아니면 해당 수와 -1의 곱.
 
 정수부 [명사]
-얼마의 정수부:
-  해당 수에서 해당 수의 소수부를 뺀 정수.
+얼마의 정수부: {
+  return ([x]) => [{ type: "정수", 값: Math.trunc(x.값) }];
+}
 
 -제곱 [접미사]
 어느 정수의 몇제곱:
 어느 정수의 어느 정수제곱: {
   pos("명사");
   return function ([x], [y]) {
-    if (y.값 < 0) {
-      if (x.값 === 0) throw new Error("0의 음수 거듭제곱을 시도했습니다.");
-      return [{type: "수", 값: Math.pow(x.값, y.값)}];
-    }
-    return [{type: "정수", 값: Math.pow(x.값, y.값)}];
+    if (y.값 >= 0) return [{ type: "정수", 값: Math.pow(x.값, y.값) }];
+    if (x.값 === 0) throw new Error("0의 음수 거듭제곱을 시도했습니다.");
+    return [{ type: "수", 값: Math.pow(x.값, y.값) }];
   }
 }
 얼마의 얼마제곱: {
@@ -205,23 +202,19 @@
     if (x.값 === 0 && y.값 < 0) {
       throw new Error("0의 음수 거듭제곱을 시도했습니다.");
     }
-    return [{type: "수", 값: Math.pow(x.값, y.값)}];
+    return [{ type: "수", 값: Math.pow(x.값, y.값) }];
   }
 }
 
-제곱 [명사]
-얼마의 제곱:
-  해당 수의 2제곱.
-얼마의 몇 제곱:
-얼마의 얼마 제곱:
-  앞의 수의 뒤의 수제곱.
+제곱 [명사] -> 2제곱
 
 제곱하다 [동사] 제곱하여/제곱해, 제곱하니
 얼마를 제곱하다:
   앞의 것의 제곱을 구하다.
+
 얼마를 몇 제곱하다:
 얼마를 얼마 제곱하다:
-  앞의 것의 뒤의 것 제곱을 구하다.
+  앞의 것의 뒤의 것제곱을 구하다.
 
 두제곱 [명사] -> 2제곱
 세제곱 [명사] -> 3제곱
@@ -233,10 +226,10 @@
 
 차 [명사]
 두 수의 차: { // TODO: 찰떡으로 구현
-  return ([x, y]) => [{type: "수", 값: Math.abs(x.값 - y.값)}];
+  return ([x, y]) => [{ type: "수", 값: Math.abs(x.값 - y.값) }];
 }
 두 정수의 차: {
-  return ([x, y]) => [{type: "정수", 값: Math.abs(x.값 - y.값)}];
+  return ([x, y]) => [{ type: "정수", 값: Math.abs(x.값 - y.값) }];
 }
 
 합 [명사]

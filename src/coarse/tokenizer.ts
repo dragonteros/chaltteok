@@ -18,8 +18,8 @@ export type SentenceFinalToken = {
   type: "SentenceFinal";
 } & WithMetadata<".">;
 export type WhitespaceToken = { type: "Whitespace" } & WithMetadata<string>;
-export type EndOfLineToken = { type: "EndOfLine" } & WithMetadata<"">;
-export type LineFeedToken = { type: "LineFeed" } & WithMetadata<"\n">;
+export type EndOfDocumentToken = { type: "EndOfDocument" } & WithMetadata<"">;
+export type NewLineToken = { type: "NewLine" } & WithMetadata<"\n">;
 export type CoarseToken =
   | JSToken
   | CommentToken
@@ -29,8 +29,8 @@ export type CoarseToken =
   | FunDefToken
   | SentenceFinalToken
   | WhitespaceToken
-  | EndOfLineToken
-  | LineFeedToken;
+  | EndOfDocumentToken
+  | NewLineToken;
 
 function consumeComment(data: string, fromIndex = 0): number | undefined {
   const parenPattern = /[()]/g;
@@ -72,13 +72,13 @@ export class CoarseTokenizer {
   file: SourceFile | undefined;
 
   private intoToken(value: string, metadata: SourceMetadata): CoarseToken {
-    if (value === "") return { metadata, type: "EndOfLine", value };
+    if (value === "") return { metadata, type: "EndOfDocument", value };
 
     if (value === "[") return { metadata, type: "Bracket", value };
     if (value === "]") return { metadata, type: "Bracket", value };
     if (value === ":") return { metadata, type: "FunDef", value };
     if (value === "->") return { metadata, type: "SynonymDef", value };
-    if (value === "\n") return { metadata, type: "LineFeed", value };
+    if (value === "\n") return { metadata, type: "NewLine", value };
     if (value === ".") return { metadata, type: "SentenceFinal", value };
     if (value[0] === "(") return { metadata, type: "Comment", value };
     if (value[0] === "{") return { metadata, type: "JS", value };
@@ -94,7 +94,6 @@ export class CoarseTokenizer {
     if (this.info.next != null) return this.info.next;
 
     const lookahead = this.chunk[this.info.cur];
-    if (lookahead === "\n") return [this.info.cur, this.info.cur + 1];
     if (lookahead === "{") return consumeBracket(this.chunk, this.info.cur);
     if (lookahead === "(") {
       const cur = consumeComment(this.chunk, this.info.cur);
@@ -109,7 +108,7 @@ export class CoarseTokenizer {
     if (match == null) return this.chunk.length;
 
     const end = match.index;
-    if ("\n({".includes(match[0])) return end; // Use lookahead
+    if ("({".includes(match[0])) return end; // Use lookahead
 
     const next = pattern.lastIndex;
     if (this.info.cur === end) return next;
@@ -156,8 +155,8 @@ ${message}`.trim();
       "FunDef",
       "SentenceFinal",
       "Whitespace",
-      "LineFeed",
-      "EndOfLine",
+      "NewLine",
+      "EndOfDocument",
     ].includes(name);
   }
 }

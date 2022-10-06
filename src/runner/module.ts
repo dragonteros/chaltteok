@@ -1,8 +1,4 @@
-import {
-  ChaltteokRuntimeError,
-  ChaltteokSyntaxError,
-  InternalError,
-} from "../base/errors";
+import { ChaltteokRuntimeError, InternalError } from "../base/errors";
 import { WithMetadata } from "../base/metadata";
 import { VocabEntry } from "../base/pos";
 import { Body, Statement } from "../coarse/structure";
@@ -10,7 +6,11 @@ import { Env } from "../finegrained/env";
 import { Action, Impl, Procedure, Protocol } from "../finegrained/procedure";
 import { Tree } from "../finegrained/terms";
 import { Token } from "../finegrained/tokens";
-import { TypePack, VariableAnnotation } from "../finegrained/types";
+import {
+  TypeAnnotation,
+  TypePack,
+  VariableAnnotation,
+} from "../finegrained/types";
 import {
   getConcreteValues,
   NewBox,
@@ -21,16 +21,12 @@ import {
   ValuePack,
 } from "../finegrained/values";
 import { parse } from "../parser/parser";
-import {
-  deriveSignature,
-  getPermutedPatterns,
-  parsePattern,
-  Pattern,
-} from "../parser/pattern";
+import { getPermutedPatterns, parsePattern, Pattern } from "../parser/pattern";
 import { isMoreSpecificSignature } from "../typechecker/resolver";
 import { getType, matchesSignature, Signature } from "../typechecker/signature";
 import { ListMap, overloaded, zip } from "../utils/utils";
 import { Context, parseJS } from "./aggregator";
+import { formatType } from "./formatter";
 
 function allEqual<T>(collection: T[]): boolean {
   if (collection.length === 0) return true;
@@ -45,6 +41,26 @@ function assertCompatible(signatures: Signature[]): void {
 
 function shouldStrict(signature: Signature): boolean[] {
   return signature.param.map((x) => x !== "lazy");
+}
+
+function deriveSignature(
+  original: Signature,
+  protocol: Protocol
+): Signature | null {
+  if (original.antecedent) return null;
+
+  const param: TypeAnnotation[] = [];
+  let antecedent: TypePack | VariableAnnotation | "any" | undefined = undefined;
+  for (const [actual, virtual] of protocol.arguments.entries()) {
+    if (virtual != null) param[virtual] = original.param[actual];
+    else {
+      const _antecedent = original.param[actual];
+      if (_antecedent === "new") return null;
+      if (_antecedent === "lazy") antecedent = "any";
+      else antecedent = _antecedent;
+    }
+  }
+  return { param, antecedent: antecedent };
 }
 
 type Definition = { patterns: WithMetadata<string>[]; body: Body };
@@ -121,10 +137,9 @@ export class Module {
   private getPatternLocations(): Record<string, Set<number>> {
     const patternLocations: Record<string, Set<number>> = {};
     for (const [i, module] of this.imports.entries()) {
-      for (const key of module.lookup.keys()) {
-        if (!(key in patternLocations)) {
-          patternLocations[key] = new Set();
-        }
+      for (const pattern of module.patterns) {
+        const key = pattern.key;
+        if (!(key in patternLocations)) patternLocations[key] = new Set();
         patternLocations[key].add(i);
       }
     }
@@ -295,7 +310,14 @@ class ModuleEnvThunk extends Thunk {
     super();
   }
   strict(): StrictValuePack {
-    const value = this.env.interpret(this.expr, this.antecedent);
+    let value;
+    try {
+      value = this.env.interpret(this.expr, this.antecedent);
+    } catch (error) {
+      if (error instanceof ChaltteokRuntimeError)
+        error.traceback.push(this.expr.metadata);
+      throw error;
+    }
     return value instanceof Thunk ? value.strict() : value;
   }
 }
@@ -326,12 +348,9 @@ class ModuleEnv extends Env {
   }
 
   interpret(expr: Tree, antecedent?: Value[] | RefBox): ValuePack {
-    const err = new ChaltteokSyntaxError(
-      "표현식 해석에 실패했습니다.",
-      expr.head.metadata
-    );
+    const err = new ChaltteokRuntimeError("표현식 해석에 실패했습니다.", []);
 
-    const head = expr.head.value;
+    const head = expr.head;
     if ("token" in head) {
       if (head.token.type === "id") return this.get(head.token.lemma);
       if (head.token.type === "number") {
@@ -357,14 +376,7 @@ class ModuleEnv extends Env {
       if (!matchesSignature(argTypes, undefined, { param })) throw err;
       return argValues.map(([x]) => x);
     }
-    try {
-      return this.interpretGeneric(expr.key, children, antecedent);
-    } catch (error) {
-      if (error instanceof ChaltteokRuntimeError) {
-        error.traceback.push(expr.head.metadata);
-      }
-      throw error;
-    }
+    return this.interpretGeneric(expr.key, children, antecedent);
   }
 
   interpretGeneric(
@@ -372,13 +384,12 @@ class ModuleEnv extends Env {
     args: ValuePack[],
     antecedent?: Value[] | RefBox
   ): ValuePack {
-    const err = new ChaltteokRuntimeError(
-      "인수의 타입에 맞는 함수를 찾지 못했습니다.",
-      []
-    );
-
     const signatureInfos = this.getSignatureInfos(key);
-    if (signatureInfos.length === 0) throw err;
+    if (signatureInfos.length === 0)
+      throw new ChaltteokRuntimeError(
+        `"${key}" 꼴에 대응하는 함수를 찾지 못했습니다.`,
+        []
+      );
     assertCompatible(signatureInfos.map(({ signature }) => signature));
 
     const children: ValuePack[] = zip(
@@ -408,16 +419,21 @@ class ModuleEnv extends Env {
     const matched = signatureInfos.filter(({ signature }) =>
       matchesSignature(argTypes, antType, signature)
     );
-    if (matched.length === 0) throw err;
+    if (matched.length === 0) {
+      const formatted = argTypes.map((x) => formatType(x ?? "lazy")).join(", ");
+      throw new ChaltteokRuntimeError(
+        `"${key}" 꼴의 함수 중 다음 자료형을 인수로 받는 것을 찾지 못했습니다: ${formatted}. `,
+        []
+      );
+    }
 
     const { signature, origin } = matched.reduce((acc, cur) =>
       isMoreSpecificSignature(acc.signature, cur.signature) ? acc : cur
     ); // TODO: error when multiple such minimal ones exist
     const action = origin.getAction(key, signature);
-    if (action == null) throw err;
-    if (action.type === "ArgRef") {
-      return this.getArg(action.index);
-    }
+    if (action == null)
+      throw new InternalError("interpretGeneric::NULL_ACTION");
+    if (action.type === "ArgRef") return this.getArg(action.index);
 
     const casted = zip(children, signature.param).map(([child, param]) => {
       if (param === "lazy") return child;

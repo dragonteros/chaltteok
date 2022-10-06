@@ -51,9 +51,7 @@ const _BUILTIN_PATTERN: Record<string, Action> = {
   },
   "{2+ T}[명사] 가[조사] 모두[부사] 같다[형용사] -> {}[형용사]": {
     type: "FunCall",
-    fun: pure((...args) => [
-      args.slice(1).every((x) => equal(x[0], args[0][0])),
-    ]),
+    fun: pure((args) => [args.slice(1).every((x) => equal(x, args[0]))]),
   },
 
   "앞[명사] 의[조사] 것[명사] -> {}[명사]": { type: "ArgRef", index: 0 },
@@ -77,8 +75,6 @@ const _BUILTIN_GENERIC_PATTERN = Object.entries({
   "앞[명사] 의[조사] T[명사] -> {}[명사]": 0,
   "뒤[명사] 의[조사] T[명사] -> {}[명사]": 1,
   "2[순우리말수관형사] T[명사] -> {}[명사]": 0,
-  "3[순우리말수관형사] T[명사] -> {}[명사]": 0,
-  "4[순우리말수관형사] T[명사] -> {}[명사]": 0,
 }).flatMap(([x, index]) =>
   PRIMITIVE_TYPES.map((T): [string, Action] => [
     x.replaceAll("T", T),

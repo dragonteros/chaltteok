@@ -171,9 +171,9 @@ class NounAnalyzer {
     for (const noun of nouns) this.addNoun(noun);
 
     eomis = eomis.concat([new Eomi("ㅁ"), new Eomi("기")]);
-    this.idaAnalyzer = new YongeonAnalyzer([new Yongeon("이다")], eomis);
+    this.idaAnalyzer = new YongeonAnalyzer([new Yongeon("-이다")], eomis);
     this.daAnalyzer = new YongeonAnalyzer(
-      [new Yongeon("이다"), new Yongeon("다", "여")],
+      [new Yongeon("-이다"), new Yongeon("-다", "-여")],
       eomis
     );
 
@@ -217,7 +217,7 @@ class NounAnalyzer {
     }
     const results: WithMetadata<WordToken | IDToken>[][] = [];
     for (const [noun, rest] of candidates) {
-      const analyses = this._analyze(noun, rest);
+      const analyses = this.analyzeNoun(noun, rest);
       for (const analysis of analyses) {
         if (!quoteMatch) results.push(analysis);
         else {
@@ -230,31 +230,35 @@ class NounAnalyzer {
     return results;
   }
 
-  _analyze(noun: HangulChunk, rest: HangulChunk): WithMetadata<WordToken>[][] {
+  analyzeNoun(
+    noun: HangulChunk,
+    rest: HangulChunk
+  ): WithMetadata<WordToken>[][] {
     const token: WithMetadata<WordToken> = {
       ...noun.external,
       value: { type: "word", lemma: noun.external.value, pos: "명사" },
     };
     const results: WithMetadata<WordToken>[][] = [];
-    for (const [analysis, _rest] of this._analyzeSuffix(rest)) {
-      const _analysis = [token].concat(analysis);
+    for (const [_analysis, _rest] of this.analyzeSuffix(rest)) {
+      const analysis = [token].concat(_analysis);
       if (_rest.internal.trim() === "") {
-        results.push(_analysis);
+        results.push(analysis);
         continue;
       }
 
-      const [consumed] = rest.splitAtInternalIndex(-_rest.internal.length);
-      for (const _josa of this._analyzeJosa(consumed, _rest)) {
-        results.push(_analysis.concat([_josa]));
+      let [consumed] = rest.splitAtInternalIndex(-_rest.internal.length);
+      if (consumed.internal.length === 0) consumed = noun;
+      for (const _josa of this.analyzeJosa(consumed, _rest)) {
+        results.push(analysis.concat([_josa]));
       }
-      for (const __analysis of this._analyzeIda(consumed, _rest)) {
-        results.push(_analysis.concat(__analysis));
+      for (const _analysis of this._analyzeIda(consumed, _rest)) {
+        results.push(analysis.concat(_analysis));
       }
     }
     return results;
   }
 
-  private _analyzeSuffix(
+  private analyzeSuffix(
     rest: HangulChunk
   ): [WithMetadata<WordToken>[], HangulChunk][] {
     const results: [WithMetadata<WordToken>[], HangulChunk][] = [[[], rest]];
@@ -263,7 +267,7 @@ class NounAnalyzer {
     for (const suffix of this.suffixes) {
       if (!rest.internal.startsWith(N(suffix))) continue;
       const [match, remaining] = rest.splitAtInternalIndex(N(suffix).length);
-      const analyses = this._analyzeSuffix(remaining);
+      const analyses = this.analyzeSuffix(remaining);
       for (const [analysis, _rest] of analyses) {
         results.push([
           [
@@ -280,7 +284,7 @@ class NounAnalyzer {
     return results;
   }
 
-  private _analyzeJosa(
+  private analyzeJosa(
     consumed: HangulChunk,
     rest: HangulChunk
   ): WithMetadata<WordToken>[] {
@@ -304,7 +308,7 @@ class NounAnalyzer {
 
     const results: WithMetadata<WordToken>[][] = [];
     const visited: Set<string> = new Set();
-    for (const [, eomi] of analyzer.analyze(rest.external.value)) {
+    for (const [, eomi] of analyzer.analyze("-" + rest.internal)) {
       let _eomi = eomi.valueOf();
       if (visited.has(_eomi)) continue;
       visited.add(_eomi);
@@ -328,7 +332,7 @@ class NounAnalyzer {
       ];
       if (josa) {
         analysis.push(
-          ...this._analyzeJosa(...rest.splitAtExternalIndex(-josa.length))
+          ...this.analyzeJosa(...rest.splitAtExternalIndex(-josa.length))
         );
       }
       results.push(analysis);
@@ -386,17 +390,16 @@ export class Analyzer {
         new Yongeon("아니하다", "아니하여"),
         new Yongeon("않다"),
       ];
-      const eomis = [new Eomi("ㅁ"), new Eomi("기")];
-      this.adjAnalyzer = new YongeonAnalyzer(anihada, eomis);
-      this.verbAnalyzer = new YongeonAnalyzer(anihada, eomis);
-      this.anidaAnalyzer = new YongeonAnalyzer([new Yongeon("아니다")], eomis);
+      this.adjAnalyzer = new YongeonAnalyzer(anihada, []);
+      this.verbAnalyzer = new YongeonAnalyzer(anihada, []);
+      this.anidaAnalyzer = new YongeonAnalyzer([new Yongeon("아니다")], []);
       this.issdaAnalyzer = new YongeonAnalyzer(
         [new Yongeon("있다"), new Yongeon("없다")],
-        eomis
+        []
       );
       this.bothAnalyzer = new YongeonAnalyzer(
         [new Yongeon("어찌/어떠하다", "어찌/어떠하여")],
-        eomis
+        []
       );
 
       this.advAnalyzer = new SimpleAnalyzer(new Set(), "부사");
@@ -432,14 +435,22 @@ export class Analyzer {
     this.verbAnalyzer.addYongeon(verb);
   }
   addEomi(eomi: Eomi, attachTo: string[]) {
-    if (attachTo.includes("형용사")) {
-      this.adjAnalyzer.addEomi(eomi);
-      this.anidaAnalyzer.addEomi(eomi);
-    }
+    if (attachTo.includes("형용사")) this.adjAnalyzer.addEomi(eomi);
     if (attachTo.includes("동사")) this.verbAnalyzer.addEomi(eomi);
     if (attachTo.includes("이다")) this.nounAnalyzer.addEomi(eomi);
-    if (attachTo.includes("아니다")) this.anidaAnalyzer.addEomi(eomi);
-    if (attachTo.includes("있다")) this.issdaAnalyzer.addEomi(eomi);
+    if (
+      attachTo.includes("형용사") ||
+      attachTo.includes("있다") ||
+      attachTo.includes("없다")
+    )
+      this.issdaAnalyzer.addEomi(eomi);
+    if (
+      attachTo.includes("형용사") ||
+      attachTo.includes("이다") ||
+      attachTo.includes("아니다")
+    )
+      this.anidaAnalyzer.addEomi(eomi);
+
     if (attachTo.includes("동사") && attachTo.includes("형용사"))
       this.bothAnalyzer.addEomi(eomi);
   }
@@ -478,7 +489,7 @@ export class Analyzer {
     noun: WithMetadata<string>,
     rest: WithMetadata<string>
   ): WithMetadata<WordToken>[][] {
-    return this.nounAnalyzer._analyze(
+    return this.nounAnalyzer.analyzeNoun(
       new HangulChunk(noun),
       new HangulChunk(rest)
     );
@@ -508,6 +519,25 @@ export function extractSinoNumericLiteral(
     );
     return [{ ...match, value: token }, trimStringWithMetadata(rest)];
   }
+
+  function analyzeWhole(
+    formatted: WithMetadata<Token>,
+    suffix: WithMetadata<string>
+  ) {
+    if (suffix.value.startsWith("제곱")) return [];
+    const analyses = analyzer.nounAnalyzer.analyze(suffix);
+    return analyses.map((x) => [formatted, ...x]);
+  }
+  function analyzeSuffix(
+    analysis: Analysis,
+    formatted: WithMetadata<Token>,
+    suffix: WithMetadata<string>
+  ) {
+    const consumed = { ...formatted, value: analysis.consumed };
+    const analyses = analyzer.analyzeSuffix(consumed, suffix);
+    return analyses.map((x) => [formatted, ...x.slice(1)]);
+  }
+
   function mapper(
     analysis: Analysis
   ): [WithMetadata<Token>[][], WithMetadata<string>] | null {
@@ -523,16 +553,12 @@ export function extractSinoNumericLiteral(
     const match = remaining.value.match(/^[^\s.,"]+/);
     if (!match) return null;
     const [suffix, rest] = splitStringWithMetadata(remaining, match[0].length);
-    const analyses = analyzer.analyzeSuffix(
-      { ...formatted, value: analysis.consumed },
-      suffix
-    );
-    if (!analyses.length) return null;
 
-    const tokens: WithMetadata<Token>[][] = analyses.map((x) => [
-      formatted,
-      ...x.slice(1),
-    ]);
+    const tokens = analyzeSuffix(analysis, formatted, suffix);
+    if (/\d$/.test(analysis.consumed)) {
+      tokens.push(...analyzeWhole(formatted, suffix));
+    }
+    if (tokens.length === 0) return null;
     return [tokens, trimStringWithMetadata(rest)];
   }
   return extractAndProcessNumber(sentence.value, mapper, [
@@ -554,6 +580,8 @@ export function extractNativeNumeralLiteral(
     if (analysis.rest !== "") maybeDet = false;
     if (noun.test(analysis.consumed)) maybeDet = false;
     else if (determiner.test(analysis.consumed)) maybeNoun = false;
+
+    if (maybeDet) return ["관형사"]; // TODO
 
     const POSs: ("관형사" | "명사")[] = [];
     if (maybeDet) POSs.push("관형사");

@@ -15,6 +15,8 @@ class ChaltteokError {
   }
   get message(): string {
     return `${josa(this.messageCore)}
+
+문제가 발생한 곳:
 ${this.traceback.map(formatMetadata).join("\n")}`.trim();
   }
 }

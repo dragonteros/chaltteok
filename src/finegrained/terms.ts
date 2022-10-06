@@ -1,5 +1,5 @@
 import { InternalError } from "../base/errors";
-import { WithMetadata } from "../base/metadata";
+import { SourceMetadata } from "../base/metadata";
 import { POS } from "../base/pos";
 import { getKeyFromToken, restoreTokenFromKey, Token } from "./tokens";
 
@@ -38,15 +38,12 @@ export function getKeyFromTerm(term: Term): string {
 
 // Will be converted to AST after retrieving action via key
 export class Tree {
-  head: WithMetadata<Term>;
-  children: Tree[];
-  key: string;
-
-  constructor(head: WithMetadata<Term>, children: Tree[], key: string) {
-    this.head = head;
-    this.children = children;
-    this.key = key;
-  }
+  constructor(
+    readonly head: Term,
+    readonly children: Tree[],
+    readonly metadata: SourceMetadata,
+    readonly key: string
+  ) {}
 
   debug(level = 0) {
     let result = "";
