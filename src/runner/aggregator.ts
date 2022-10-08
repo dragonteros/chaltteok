@@ -46,11 +46,15 @@ export function addVocab(analyzer: Analyzer, vocab: VocabEntry): void {
     if (all || extra.includes("이다")) attachTo.push("이다");
     if (all || extra.includes("아니다")) attachTo.push("아니다");
 
-    const [a, b] = lemma
+    const [afterBatchim, afterVowel] = lemma
       .replace("(아/어)", "어")
       .replace("(어/아)", "어")
       .split("/", 2);
-    analyzer.addEomi(new Eomi(a.trim(), b?.trim()), attachTo);
+    const forms: [string, string | undefined] =
+      afterVowel == null
+        ? [afterBatchim.trim(), undefined]
+        : [afterVowel.trim(), afterBatchim.trim()];
+    analyzer.addEomi(new Eomi(...forms), attachTo);
   } else if (pos === "조사") {
     const [a, b] = lemma.split("/", 2);
     const word = makeJosa(a, b);

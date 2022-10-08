@@ -1,14 +1,14 @@
 갑절 [명사] -> 두 곱절
 
 값 [명사]
-무엇의 값:
+얼마의 값:
 어찌한 값:
 어찌한 것:
 {
   needs("1 수");
   return ([num]) => [num];
 }
-무엇의 값:
+어느 정수의 값:
 어찌한 값:
 어찌한 것:
 {
@@ -44,32 +44,29 @@
   return function (box, [num]) {
     box.data[0].type = "수";
     box.data[0].값 *= num.값;
-    return box;
+    return box.data;
   };
 }
 어느 정수 변수에 어느 정수를 곱하다: {
   return function (box, [num]) {
     box.data[0].type = "정수";
     box.data[0].값 *= num.값;
-    return box;
+    return box.data;
   };
 }
 
 나눔 [명사] (: 수의 일종.  ( 새 타입 생성 ))
-무엇의 값:
 어찌한 값:
 어찌한 것: {
   needs("1 나눔");
   return ([division]) => [{ type: "수", 값: division.값 }];
 }
 몫 [명사]
-무엇의 몫:
 어찌한 몫: {
   needs("1 나눔");
   return ([division]) => [{ type: "정수", 값: division.몫 }];
 }
 나머지 [명사]
-무엇의 나머지:
 어찌한 나머지: {
   needs("1 나눔");
   return ([division]) => [{ type: "정수", 값: division.나머지 }];
@@ -91,7 +88,7 @@
   return function (box, [num]) {
     box.data[0].type = "수";  // TODO: auto casting
     box.data[0].값 /= num.값;
-    return box;
+    return box.data;
   };
 }
 
@@ -119,14 +116,14 @@
   return function (box, [num]) {
     box.data[0].type = "수";  // TODO: auto casting
     box.data[0].값 += num.값;
-    return box;
+    return box.data;
   };
 }
 어느 정수 변수에 어느 정수를 더하다: {
   return function (box, [num]) {
     box.data[0].type = "정수";  // TODO: auto casting
     box.data[0].값 += num.값;
-    return box;
+    return box.data;
   };
 }
 
@@ -157,14 +154,14 @@
   return function (box, [num]) {
     box.data[0].type = "수";  // TODO: auto casting
     box.data[0].값 -= num.값;
-    return box;
+    return box.data;
   };
 }
 어느 정수 변수에서 어느 정수를 빼다: {
   return function (box, [num]) {
     box.data[0].type = "정수";
     box.data[0].값 -= num.값;
-    return box;
+    return box.data;
   };
 }
 
@@ -220,9 +217,9 @@
 세제곱 [명사] -> 3제곱
 네제곱 [명사] -> 4제곱
 스무제곱 [명사] -> 20제곱  ( 예외 )
-두제곱하다 [동사] -> 2 제곱하다 ( `몇제곱하다`는 미지원 )
-세제곱하다 [동사] -> 3 제곱하다
-네제곱하다 [동사] -> 4 제곱하다
+두제곱하다 [동사] -> 두 제곱하다 ( `몇제곱하다`는 미지원 )
+세제곱하다 [동사] -> 세 제곱하다
+네제곱하다 [동사] -> 네 제곱하다
 
 차 [명사]
 두 수의 차: { // TODO: 찰떡으로 구현

@@ -1,5 +1,5 @@
 import { ChaltteokRuntimeError, InternalError } from "../base/errors";
-import { WithMetadata } from "../base/metadata";
+import { SourceMetadata, WithMetadata } from "../base/metadata";
 import { VocabEntry } from "../base/pos";
 import { Body, Statement } from "../coarse/structure";
 import { Env } from "../finegrained/env";
@@ -186,7 +186,8 @@ export class Module {
           const [newPatterns, newSignature] = parsePattern(
             tokens,
             signature,
-            pos
+            pos,
+            true
           );
           for (const newPattern of newPatterns) {
             for (const [ptn, sign, protocol] of this.expandPatterns(
@@ -275,7 +276,9 @@ export class Module {
     for (const main of this.main) {
       const tokens = this.context.tokenize(main);
       const exprs = parse(tokens, this.context.patterns);
-      for (const expr of exprs) value = env.lazy(expr).strict();
+      for (const expr of exprs) {
+        value = env.lazy(expr).strict();
+      }
     }
     return value;
   }
@@ -310,14 +313,7 @@ class ModuleEnvThunk extends Thunk {
     super();
   }
   strict(): StrictValuePack {
-    let value;
-    try {
-      value = this.env.interpret(this.expr, this.antecedent);
-    } catch (error) {
-      if (error instanceof ChaltteokRuntimeError)
-        error.traceback.push(this.expr.metadata);
-      throw error;
-    }
+    const value = this.env.interpret(this.expr, this.antecedent);
     return value instanceof Thunk ? value.strict() : value;
   }
 }
@@ -376,10 +372,11 @@ class ModuleEnv extends Env {
       if (!matchesSignature(argTypes, undefined, { param })) throw err;
       return argValues.map(([x]) => x);
     }
-    return this.interpretGeneric(expr.key, children, antecedent);
+    return this.interpretGeneric(expr.metadata, expr.key, children, antecedent);
   }
 
   interpretGeneric(
+    metadata: SourceMetadata,
     key: string,
     args: ValuePack[],
     antecedent?: Value[] | RefBox
@@ -388,7 +385,7 @@ class ModuleEnv extends Env {
     if (signatureInfos.length === 0)
       throw new ChaltteokRuntimeError(
         `"${key}" 꼴에 대응하는 함수를 찾지 못했습니다.`,
-        []
+        [metadata]
       );
     assertCompatible(signatureInfos.map(({ signature }) => signature));
 
@@ -423,7 +420,7 @@ class ModuleEnv extends Env {
       const formatted = argTypes.map((x) => formatType(x ?? "lazy")).join(", ");
       throw new ChaltteokRuntimeError(
         `"${key}" 꼴의 함수 중 다음 자료형을 인수로 받는 것을 찾지 못했습니다: ${formatted}. `,
-        []
+        [metadata]
       );
     }
 
@@ -449,6 +446,12 @@ class ModuleEnv extends Env {
       if ("variableOf" in param) return child;
       return unwrap(child);
     });
-    return origin.call(action.fun, casted, antecedent);
+    try {
+      return origin.call(action.fun, casted, antecedent);
+    } catch (error) {
+      if (error instanceof ChaltteokRuntimeError)
+        error.traceback.push(metadata);
+      throw error;
+    }
   }
 }

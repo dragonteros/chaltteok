@@ -61,7 +61,7 @@ function parseSentence(
     throw new InternalError("parseSentence::CONSECUTIVE_COMMA_NOT_FOUND");
   }
 
-  for (let i = 1; i < phrases.length; i += 2) {
+  for (let i = 0; i < phrases.length; i++) {
     phrases[i] = phraseOperation(phrases[i], patterns);
   }
   const result = phraseOperation(phrases.flat(), patterns);

@@ -1,5 +1,5 @@
 import moo from "moo";
-import { InternalError } from "../base/errors";
+import { ChaltteokSyntaxError, InternalError } from "../base/errors";
 import { mergeMetadata, SourceMetadata, WithMetadata } from "../base/metadata";
 import { POS } from "../base/pos";
 import { Protocol } from "../finegrained/procedure";
@@ -29,7 +29,7 @@ function _allCombinations<T>(cases: (T | null)[][]): T[][] {
   function _cleanse(tokens: (T | null)[]): T[] {
     return tokens.filter((x): x is T => x != null);
   }
-  if (cases.length <= 1) return cases.map(_cleanse);
+  if (cases.length <= 1) return cases[0].map((x) => [x]).map(_cleanse);
   const heads = cases[0];
   const tails = _allCombinations(cases.slice(1));
   const combinations = [];
@@ -217,7 +217,8 @@ function preprocessPattern(key: string): string[][] {
 export function parsePattern(
   tokens: WithMetadata<Token>[],
   signature?: Signature,
-  pos?: POS
+  pos?: POS,
+  isJS = false
 ): [Pattern[], Signature] {
   const metadata: SourceMetadata = mergeMetadata(
     ...tokens.map((token) => token.metadata)
@@ -236,6 +237,12 @@ export function parsePattern(
     .map(([x]) => x && parseTermKey(x)[1])
     .filter((x) => x !== "")
     .map(parseTypeAnnotation);
+  if (!isJS && termTypes.length > 2) {
+    throw new ChaltteokSyntaxError(
+      "인수가 셋 이상인 함수는 아직 지원되지 않습니다.",
+      metadata
+    );
+  }
 
   const patterns = _allCombinations(terms).map(function (terms) {
     const lastTerm = terms[terms.length - 1];
