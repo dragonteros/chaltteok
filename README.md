@@ -2,6 +2,8 @@
 
 자연스러운 한국어를 꿈꾸는 프로그래밍 언어 '찰떡'의 명세와 구현체입니다.
 
+[구현체](https://dragonteros.github.io/chaltteok-ide/) 페이지에서 테스트해보실 수 있습니다!
+
 ## 명세
 
 [명세](./docs/spec.md) 문서를 참고해주세요.
