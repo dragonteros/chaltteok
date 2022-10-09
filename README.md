@@ -34,5 +34,13 @@
 
 [예시](./docs/examples.md) 문서에 더 많이 있으니 참조해주세요.
 
+## Node.js 구현체
+```
+git clone https://github.com/dragonteros/chaltteok.git
+cd chaltteok
+npm install
+node repl.js
+```
+
 ## 같이 보기
 * [누리 : 함수형 한글 프로그래밍 언어](https://github.com/suhdonghwi/nuri)

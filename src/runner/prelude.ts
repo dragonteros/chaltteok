@@ -10,15 +10,7 @@ class PreludeModule extends Module {
   private specialLookup: Record<string, Action> = {};
 
   constructor() {
-    const file: SourceFile = {
-      path: "<built-in module>",
-      content: PRELUDE,
-    };
-    const program = parseStructure({
-      value: PRELUDE,
-      metadata: { spans: [{ start: 0, end: PRELUDE.length }], file },
-    });
-    super([], program);
+    super([]);
   }
 
   build(): void {
@@ -37,7 +29,16 @@ class PreludeModule extends Module {
         this.lookup.get(ptn.key).push([sign, implID, protocol]);
       }
     }
-    super.build();
+
+    const file: SourceFile = {
+      path: "<built-in module>",
+      content: PRELUDE,
+    };
+    const program = parseStructure({
+      value: PRELUDE,
+      metadata: { spans: [{ start: 0, end: PRELUDE.length }], file },
+    });
+    super.add(program);
   }
 
   getSignatures(patternKey: string): Signature[] {

@@ -13,21 +13,22 @@ import { CoarseTokenizer } from "./tokenizer";
 export function* parseStructureInteractive(): Generator<
   undefined,
   Statement[],
-  WithMetadata<string>
+  string
 > {
   const file: SourceFile = { content: "", path: "<stdin>" };
 
   const localGrammar = nearley.Grammar.fromCompiled(grammar);
   (localGrammar.lexer as CoarseTokenizer).file = file;
+  (localGrammar.lexer as CoarseTokenizer).emitEndOfDocument = false;
   const parser = new nearley.Parser(localGrammar);
 
-  let spans: SourceSpan[] = [];
+  const spans: SourceSpan[] = [];
+  let cur = 0;
   do {
     const line = yield;
-    file.content += line.value;
-    spans = mergeSpans(...spans, ...line.metadata.spans);
+    spans.push({ start: cur, end: cur + line.length });
 
-    parser.feed(line.value);
+    parser.feed(line);
     if (parser.results.length > 1) {
       throw new ChaltteokSyntaxError("구문이 중의적입니다.", { file, spans });
     }

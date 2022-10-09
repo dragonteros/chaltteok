@@ -1,6 +1,6 @@
 {
   "name": "chaltteok",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "자연스러운 한국어를 꿈꾸는 프로그래밍 언어",
   "scripts": {
     "build": "nearleyc src/coarse/grammar.ne -o src/coarse/grammar.ts && node ./preludeLoader.js && microbundle",
@@ -23,7 +23,8 @@
     "josa": "^3.0.1",
     "kor-to-number": "^1.1.5",
     "moo": "^0.5.1",
-    "nearley": "^2.20.1"
+    "nearley": "^2.20.1",
+    "readline-sync": "^1.4.10"
   },
   "devDependencies": {
     "@types/mocha": "^9.1.1",

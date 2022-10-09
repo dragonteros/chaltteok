@@ -67,9 +67,9 @@ export type CoarseTokenizerInfo = {
 };
 
 export class CoarseTokenizer {
-  chunk = "";
   info: CoarseTokenizerInfo = { cur: 0 };
   file: SourceFile | undefined;
+  emitEndOfDocument = true;
 
   private intoToken(value: string, metadata: SourceMetadata): CoarseToken {
     if (value === "") return { metadata, type: "EndOfDocument", value };
@@ -86,17 +86,21 @@ export class CoarseTokenizer {
     return { metadata, type: "Word", value };
   }
   private consume(): undefined | number | [number, number] {
-    if (this.info.cur >= this.chunk.length) {
+    if (this.file == null)
+      throw new InternalError("CoarseTokenizer::next::FILE_NOT_SET");
+    if (this.info.cur >= this.file.content.length) {
+      if (!this.emitEndOfDocument) return undefined;
       if (this.info.emiittedEndOfDocument) return undefined;
       this.info.emiittedEndOfDocument = true;
       return this.info.cur;
     }
     if (this.info.next != null) return this.info.next;
 
-    const lookahead = this.chunk[this.info.cur];
-    if (lookahead === "{") return consumeBracket(this.chunk, this.info.cur);
+    const lookahead = this.file.content[this.info.cur];
+    if (lookahead === "{")
+      return consumeBracket(this.file.content, this.info.cur);
     if (lookahead === "(") {
-      const cur = consumeComment(this.chunk, this.info.cur);
+      const cur = consumeComment(this.file.content, this.info.cur);
       if (cur == null) return undefined;
       this.info.cur = cur; // skip Comment
       return this.consume();
@@ -104,8 +108,8 @@ export class CoarseTokenizer {
 
     const pattern = /->|[({[:\]]|\n|[^\S\n]+|(?<!\d)\.|\.(?!\d)/g;
     pattern.lastIndex = this.info.cur;
-    const match = pattern.exec(this.chunk);
-    if (match == null) return this.chunk.length;
+    const match = pattern.exec(this.file.content);
+    if (match == null) return this.file.content.length;
 
     const end = match.index;
     if ("({".includes(match[0])) return end; // Use lookahead
@@ -128,7 +132,7 @@ export class CoarseTokenizer {
       spans: [{ start: this.info.cur, end }],
     };
     const token = this.intoToken(
-      this.chunk.slice(this.info.cur, end),
+      this.file.content.slice(this.info.cur, end),
       metadata
     );
     this.info = { ...this.info, cur: end, next };
@@ -138,8 +142,18 @@ export class CoarseTokenizer {
     return this.info;
   }
   reset(chunk: string, info?: CoarseTokenizerInfo) {
-    this.chunk = chunk.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
-    this.info = info ?? { cur: 0 };
+    if (this.file == null)
+      throw new InternalError("CoarseTokenizer::next::FILE_NOT_SET");
+
+    if (info == null) {
+      this.file.content = chunk.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+      this.info = { cur: 0 };
+    } else {
+      this.file.content += chunk
+        .replaceAll("\r\n", "\n")
+        .replaceAll("\r", "\n");
+      this.info = info;
+    }
   }
   formatError(token: CoarseToken, message = ""): string {
     return `${formatMetadata(token.metadata)}

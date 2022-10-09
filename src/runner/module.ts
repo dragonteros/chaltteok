@@ -69,53 +69,23 @@ export class Module {
   private readonly context: Context;
   private readonly vocab: VocabEntry[] = [];
   private readonly synonyms: Record<number, WithMetadata<string>> = {};
-  private readonly definitions: Definition[] = [];
   private readonly patterns: Pattern[] = [];
   readonly patternLocations: Record<string, Set<number>>;
-  private readonly main: WithMetadata<string>[] = [];
+  private main: WithMetadata<string>[] = [];
 
   // pattern -> signature -> procedure
   // looked up at runtime
   private readonly impls: Impl[] = [];
   protected readonly lookup: ListMap<[Signature, number, Protocol | undefined]>;
 
-  constructor(public readonly imports: Module[], statements: Statement[]) {
-    for (const statement of statements) {
-      switch (statement.type) {
-        case "Expr":
-          this.main.push(statement.expr);
-          break;
-        case "VocabDef":
-          this.vocab.push(statement.vocab);
-          break;
-        case "SynonymDef":
-          this.synonyms[this.vocab.length] = statement.synonym;
-          this.vocab.push(statement.vocab);
-          break;
-        case "VocabFunDef":
-          this.vocab.push(statement.vocab);
-          this.definitions.push({
-            patterns: [statement.vocab.lemma],
-            body: statement.body,
-          });
-          break;
-        case "FunDef":
-          this.definitions.push(statement);
-          break;
-      }
-    }
+  constructor(public readonly imports: Module[]) {
     this.context = this.initContext();
     this.patternLocations = this.getPatternLocations();
-
     this.lookup = new ListMap();
   }
 
   private initContext(): Context {
     const context = new Context();
-
-    for (const vocab of this.vocab) {
-      context.loadVocab(vocab);
-    }
     for (const module of this.imports) {
       for (const vocab of module.vocab) {
         context.loadVocab(vocab);
@@ -127,10 +97,6 @@ export class Module {
         context.loadPattern(pattern);
       }
     }
-    for (const [vocabIdx, synonym] of Object.entries(this.synonyms)) {
-      context.loadSynonym(this.vocab[+vocabIdx], synonym);
-    }
-
     return context;
   }
 
@@ -144,6 +110,53 @@ export class Module {
       }
     }
     return patternLocations;
+  }
+
+  add(statements: Statement[]): void {
+    const vocab: VocabEntry[] = [];
+    const synonyms: Record<number, WithMetadata<string>> = {};
+    const definitions: Definition[] = [];
+
+    for (const statement of statements) {
+      switch (statement.type) {
+        case "Expr":
+          this.main.push(statement.expr);
+          break;
+        case "VocabDef":
+          vocab.push(statement.vocab);
+          break;
+        case "SynonymDef":
+          synonyms[this.vocab.length + vocab.length] = statement.synonym;
+          vocab.push(statement.vocab);
+          break;
+        case "VocabFunDef":
+          vocab.push(statement.vocab);
+          definitions.push({
+            patterns: [statement.vocab.lemma],
+            body: statement.body,
+          });
+          break;
+        case "FunDef":
+          definitions.push(statement);
+          break;
+      }
+    }
+    this.updateContext(vocab, synonyms);
+    this.updateDefinition(definitions);
+  }
+
+  private updateContext(
+    vocabs: VocabEntry[],
+    synonyms: Record<number, WithMetadata<string>>
+  ) {
+    for (const vocab of vocabs) {
+      this.vocab.push(vocab);
+      this.context.loadVocab(vocab);
+    }
+    for (const [vocabIdx, synonym] of Object.entries(synonyms)) {
+      this.synonyms[+vocabIdx] = synonym;
+      this.context.loadSynonym(this.vocab[+vocabIdx], synonym);
+    }
   }
 
   protected registerPattern(pattern: Pattern): void {
@@ -171,12 +184,12 @@ export class Module {
     return results;
   }
 
-  build(): void {
+  private updateDefinition(definitions: Definition[]): void {
     const tokenized: Array<
       [WithMetadata<Token>[], [string, Signature, Protocol | undefined][]]
     > = [];
 
-    for (const definition of this.definitions) {
+    for (const definition of definitions) {
       if (definition.body.type === "JSBody") {
         const [impl, signature, pos] = parseJS(definition.body);
         const implID = this.registerImpl(impl);
@@ -280,6 +293,8 @@ export class Module {
         value = env.lazy(expr).strict();
       }
     }
+
+    this.main = [];
     return value;
   }
 }
