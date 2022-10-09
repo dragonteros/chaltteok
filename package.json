@@ -1,6 +1,6 @@
 {
   "name": "chaltteok",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "자연스러운 한국어를 꿈꾸는 프로그래밍 언어",
   "scripts": {
     "build": "nearleyc src/coarse/grammar.ne -o src/coarse/grammar.ts && node ./preludeLoader.js && microbundle",

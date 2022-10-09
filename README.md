@@ -1,12 +1,10 @@
 # 찰떡🍡
+
 자연스러운 한국어를 꿈꾸는 프로그래밍 언어 '찰떡'의 명세와 구현체입니다.
 
-[구현체](https://dragonteros.github.io/chaltteok-ide/) 페이지에서 테스트해보실 수 있습니다!
-
-
 ## 명세
-[명세](./docs/spec.md) 문서를 참고해주세요.
 
+[명세](./docs/spec.md) 문서를 참고해주세요.
 
 ## 예시
 
@@ -35,6 +33,7 @@
 [예시](./docs/examples.md) 문서에 더 많이 있으니 참조해주세요.
 
 ## Node.js 구현체
+
 ```
 git clone https://github.com/dragonteros/chaltteok.git
 cd chaltteok
@@ -43,4 +42,5 @@ node repl.js
 ```
 
 ## 같이 보기
-* [누리 : 함수형 한글 프로그래밍 언어](https://github.com/suhdonghwi/nuri)
+
+- [누리 : 함수형 한글 프로그래밍 언어](https://github.com/suhdonghwi/nuri)
