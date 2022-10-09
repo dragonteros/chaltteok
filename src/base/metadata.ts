@@ -1,4 +1,4 @@
-import { mb_strwidth } from "@demouth/mb_strwidth";
+import stringWidth from "string-width";
 import { zip } from "../utils/utils";
 
 export type SourceFile = {
@@ -118,7 +118,7 @@ function formatSpans(
       result.push("\n");
     } else {
       const filler = cur < spans[spanIdx].start ? " " : "^";
-      result.push(filler.repeat(mb_strwidth(c)));
+      result.push(filler.repeat(stringWidth(c)));
     }
   }
   return zip(content.split("\n"), result.join("").split("\n"))
