@@ -40,6 +40,7 @@
 git clone https://github.com/dragonteros/chaltteok.git
 cd chaltteok
 npm install
+npm run build
 node repl.js
 ```
 
