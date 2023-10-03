@@ -215,6 +215,13 @@ describe("참거짓", function () {
   });
 });
 
+describe("문자열", function () { 
+  it("기본", function () { 
+    assertInterpret('"".', '""');
+    assertInterpret('"123abc가나다".', '"123abc가나다"');
+  })
+})
+
 describe("명령형", function () {
   it("변수 기본", function () {
     assertInterpret("1을 '초깃값'으로 삼는다. '초깃값'.", "1");

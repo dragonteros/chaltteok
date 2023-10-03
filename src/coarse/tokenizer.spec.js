@@ -19,6 +19,18 @@ function assertCoarseTokenizer(program, expected) {
 
 // CoarseTokenizer must preserve original text
 describe("거시 분절", function () {
+  it("문자열", function () {
+    const program = `"안녕(하세요)?("이라는 말. (주석 "(" ) 주석)`;
+    assertCoarseTokenizer(program, [
+      ["Word", '"안녕(하세요)?("'],
+      ["Word", "이라는"],
+      ["Whitespace", " "],
+      ["Word", "말"],
+      ["SentenceFinal", "."],
+      ["Whitespace", " "],
+      ["EndOfDocument", ""],
+    ]);
+  });
   it("어휘 정의", function () {
     const program = `
   앞 [명사]

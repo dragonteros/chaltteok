@@ -32,6 +32,13 @@ export type CoarseToken =
   | EndOfDocumentToken
   | NewLineToken;
 
+function consumeString(data: string, fromIndex = 0): number | undefined {
+  const pattern = /"(?:\\.|[^"\\])*"/g;
+  pattern.lastIndex = fromIndex;
+  const match = pattern.exec(data);
+  if (match == null) return undefined;
+  return pattern.lastIndex;
+}
 function consumeComment(data: string, fromIndex = 0): number | undefined {
   const parenPattern = /[()]/g;
   parenPattern.lastIndex = fromIndex;
@@ -97,6 +104,8 @@ export class CoarseTokenizer {
     if (this.info.next != null) return this.info.next;
 
     const lookahead = this.file.content[this.info.cur];
+    if (lookahead === '"')
+      return consumeString(this.file.content, this.info.cur);
     if (lookahead === "{")
       return consumeBracket(this.file.content, this.info.cur);
     if (lookahead === "(") {
@@ -106,13 +115,13 @@ export class CoarseTokenizer {
       return this.consume();
     }
 
-    const pattern = /->|[({[:\]]|\n|[^\S\n]+|(?<!\d)\.|\.(?!\d)/g;
+    const pattern = /->|["({[:\]]|\n|[^\S\n]+|(?<!\d)\.|\.(?!\d)/g;
     pattern.lastIndex = this.info.cur;
     const match = pattern.exec(this.file.content);
     if (match == null) return this.file.content.length;
 
     const end = match.index;
-    if ("({".includes(match[0])) return end; // Use lookahead
+    if ('({"'.includes(match[0])) return end; // Use lookahead
 
     const next = pattern.lastIndex;
     if (this.info.cur === end) return next;

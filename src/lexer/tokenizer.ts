@@ -75,6 +75,18 @@ function tagPOS(
   return results[0];
 }
 
+function consume(source: WithMetadata<string>) {
+  const splitPattern = /^[^\s,."]+|^[,.]|^"(?:\\.|[^\\"])*"[^\s,."]*/;
+  const splitted = source.value.match(splitPattern);
+  if (!splitted) return;
+  const [matched, remaining] = splitStringWithMetadata(
+    source,
+    splitted[0].length
+  );
+  const rest = trimStringWithMetadata(remaining);
+  return [matched, rest];
+}
+
 function tokenize(
   sentence: WithMetadata<string>,
   analyzer: Analyzer,
@@ -104,15 +116,10 @@ function tokenize(
       continue;
     }
 
-    const splitPattern = /^[^\s,."]+|[,.]|"[^"]*"$/;
-    const splitted = rest.value.match(splitPattern);
-    if (!splitted) break;
-    const [matched, remaining] = splitStringWithMetadata(
-      rest,
-      splitted[0].length
-    );
-    rest = trimStringWithMetadata(remaining);
-    push(...tagPOS(past, matched, analyzer, isFinal && rest.value === ""));
+    const match = consume(rest);
+    if (match == null) break;
+    rest = match[1];
+    push(...tagPOS(past, match[0], analyzer, isFinal && rest.value === ""));
   }
   return result;
 }
